@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aequitas RWA | Casper Agentic Yield Routing & Risk Pricing Dashboard</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Deep neon background effects -->
+  <div class="glow-bg-1"></div>
+  <div class="glow-bg-2"></div>
+
+  <div class="dashboard-container">
+    <!-- Header -->
+    <header class="dashboard-header">
+      <div class="header-logo">
+        <span class="logo-accent">Aequitas</span> RWA
+        <span class="badge-beta">PROTOTYPE</span>
+      </div>
+      <div class="network-status">
+        <div class="status-item">
+          <span class="status-dot green animate-pulse"></span>
+          <span>Casper Testnet: <strong class="text-neon-blue">CONNECTED</strong></span>
+        </div>
+        <div class="status-item">
+          <span class="status-dot green animate-pulse"></span>
+          <span>x402 Facilitator: <strong class="text-neon-pink">ACTIVE</strong></span>
+        </div>
+        <div class="status-item">
+          <span class="status-dot green animate-pulse"></span>
+          <span>Swarm State: <strong class="text-neon-green">RUNNING</strong></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Layout Grid -->
+    <div class="dashboard-grid">
+      <!-- Left Panel: Vault & Portfolio Controls -->
+      <section class="grid-panel panel-left card-glass">
+        <div class="panel-header">
+          <h2>Yield Vault Control</h2>
+          <span class="header-icon">🛡️</span>
+        </div>
+        
+        <!-- TVL & Stats -->
+        <div class="vault-stats">
+          <div class="stat-card">
+            <span class="stat-label">Total Value Locked (TVL)</span>
+            <div class="stat-value text-neon-blue" id="tvl-value">150,000.00 <span class="unit">CSPR</span></div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Average Yield Rate (APY)</span>
+            <div class="stat-value text-neon-green" id="avg-yield">8.15%</div>
+          </div>
+        </div>
+
+        <!-- Deposit / Withdraw Controls -->
+        <div class="vault-actions">
+          <h3>Interactive Actions</h3>
+          <div class="tabs">
+            <button class="tab-btn active" id="tab-deposit">Deposit</button>
+            <button class="tab-btn" id="tab-withdraw">Withdraw</button>
+          </div>
+          <div class="tab-content">
+            <div class="input-group">
+              <label for="amount-input">Amount (CSPR)</label>
+              <div class="input-wrapper">
+                <input type="number" id="amount-input" value="5000" min="1">
+                <span class="input-suffix">CSPR</span>
+              </div>
+            </div>
+            <div class="wallet-balance-info">
+              <span>My Wallet: <strong id="user-balance">500,000.00</strong> CSPR</span>
+            </div>
+            <button class="btn-action btn-neon-blue" id="btn-submit-action">Execute Deposit</button>
+          </div>
+        </div>
+
+        <!-- Allocation Breakdown -->
+        <div class="portfolio-allocations">
+          <h3>Asset Allocations</h3>
+          <div class="allocation-list" id="allocation-bars">
+            <!-- Dynamic Allocation Bars -->
+            <div class="allocation-item">
+              <div class="allocation-meta">
+                <span>RWA-REAL-101</span>
+                <strong>46.7%</strong>
+              </div>
+              <div class="bar-container">
+                <div class="bar-fill" style="width: 46.7%; background: var(--neon-blue);"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Center Panel: Swarm Visualizer -->
+      <section class="grid-panel panel-center card-glass">
+        <div class="panel-header">
+          <h2>Agent Swarm Visualizer</h2>
+          <span class="header-icon">🤖</span>
+        </div>
+        <div class="canvas-container">
+          <canvas id="swarmCanvas"></canvas>
+          <div class="inspect-overlay" id="node-inspector" style="display: none;">
+            <div class="inspect-header">
+              <h3 id="inspect-title">Node Details</h3>
+              <button class="inspect-close" id="btn-inspect-close">&times;</button>
+            </div>
+            <div class="inspect-body" id="inspect-content">
+              <!-- Dynamically populated stats -->
+            </div>
+          </div>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-dot pink"></span>x402 API</span>
+            <span class="legend-item"><span class="legend-dot purple"></span>Evaluator Agent</span>
+            <span class="legend-item"><span class="legend-dot blue"></span>Router Agent</span>
+            <span class="legend-item"><span class="legend-dot green"></span>RWA Contracts</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Panel: Logs Console -->
+      <section class="grid-panel panel-right card-glass">
+        <div class="panel-header">
+          <h2>Autonomous Agent Console</h2>
+          <div class="agent-mode-control">
+            <span class="mode-label">Auto:</span>
+            <button class="btn-toggle active" id="btn-automation-toggle">ON</button>
+          </div>
+        </div>
+        <div class="manual-agent-actions" id="manual-triggers-panel" style="display: none;">
+          <button class="btn-trigger-manual purple" id="btn-trigger-evaluator">Eval Swarm</button>
+          <button class="btn-trigger-manual blue" id="btn-trigger-router">Rebalance Vault</button>
+        </div>
+        <div class="log-filters">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="evaluator">Evaluator</button>
+          <button class="filter-btn" data-filter="router">Router</button>
+          <button class="filter-btn" data-filter="x402">x402</button>
+          <button class="filter-btn" data-filter="casper">Casper</button>
+        </div>
+        <div class="console-log" id="console-output">
+          <!-- Logs stream here -->
+          <div class="log-line system">
+            <span class="log-time">[18:00:00]</span>
+            <span class="log-tag">[System]</span> Welcome to Aequitas RWA Swarm Dashboard. Connecting to Casper MCP Node...
+          </div>
+        </div>
+        <div class="console-input-bar">
+          <span class="prompt-symbol">&gt;</span>
+          <input type="text" id="console-cli" placeholder="Type /help for command list...">
+        </div>
+      </section>
+    </div>
+
+    <!-- Bottom Row: Asset Registry & Shocks -->
+    <footer class="dashboard-footer">
+      <div class="grid-panel panel-bottom card-glass">
+        <div class="panel-header">
+          <h2>Fractionalized RWA Registries & Yield Tables</h2>
+          <span class="header-icon">📈</span>
+        </div>
+        <div class="bottom-split">
+          <!-- Table -->
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Asset Contract</th>
+                  <th>Underlying Asset</th>
+                  <th>Valuation (USD)</th>
+                  <th>Risk Rating</th>
+                  <th>Yield Rate (APY)</th>
+                  <th>Capital Allocated</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="asset-table-body">
+                <!-- Dynamic Asset Table Rows -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Control Deck (Tabbed Controllers) -->
+          <div class="control-deck">
+            <div class="deck-tabs">
+              <button class="deck-tab active" data-deck-tab="deck-shocks">Macro Shocks</button>
+              <button class="deck-tab" data-deck-tab="deck-deploy">Deploy Contract</button>
+              <button class="deck-tab" data-deck-tab="deck-parameters">Asset Parameters</button>
+            </div>
+            
+            <div class="deck-content">
+              <!-- Tab 1: Shocks -->
+              <div class="deck-pane active" id="deck-shocks">
+                <p class="pane-desc">Trigger economic scenarios to force agents to reprice assets and route liquidity in real-time.</p>
+                <div class="shocks-controls" id="shocks-controls">
+                  <!-- Dynamic Shocks Controls -->
+                </div>
+              </div>
+              
+              <!-- Tab 2: Deploy Contract -->
+              <div class="deck-pane" id="deck-deploy">
+                <form id="form-deploy-rwa" class="deck-form">
+                  <div class="form-grid">
+                    <div class="form-group">
+                      <label for="deploy-name">Name</label>
+                      <input type="text" id="deploy-name" value="Commercial Plaza" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="deploy-symbol">Symbol (ID)</label>
+                      <input type="text" id="deploy-symbol" value="RWA-PLZ-404" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="deploy-valuation">Valuation (USD)</label>
+                      <input type="number" id="deploy-valuation" value="1000000" min="1000" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="deploy-yield">Yield APY (%)</label>
+                      <input type="number" id="deploy-yield" value="8.50" min="0.1" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="deploy-risk">Risk Rating</label>
+                      <select id="deploy-risk">
+                        <option value="A+">A+</option>
+                        <option value="A" selected>A</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="C">C</option>
+                      </select>
+                    </div>
+                    <button type="submit" class="btn-deck-action btn-neon-pink">Deploy RWA Token</button>
+                  </div>
+                </form>
+              </div>
+              
+              <!-- Tab 3: Asset Parameters -->
+              <div class="deck-pane" id="deck-parameters">
+                <div class="parameter-controls">
+                  <div class="form-group">
+                    <label for="param-asset-select">Select Asset</label>
+                    <select id="param-asset-select">
+                      <!-- Dynamically populated -->
+                    </select>
+                  </div>
+                  <div class="slider-group">
+                    <div class="slider-label">
+                      <span>Valuation (USD)</span>
+                      <strong id="val-slider-value">$1,200,000</strong>
+                    </div>
+                    <input type="range" id="param-val-slider" min="100000" max="2500000" step="50000" value="1200000">
+                  </div>
+                  <div class="slider-group">
+                    <div class="slider-label">
+                      <span>Yield APY (%)</span>
+                      <strong id="yield-slider-value">7.20%</strong>
+                    </div>
+                    <input type="range" id="param-yield-slider" min="1.0" max="15.0" step="0.05" value="7.20">
+                  </div>
+                  <div class="risk-selector-group">
+                    <label>Risk Rating</label>
+                    <div class="risk-segments" id="param-risk-segments">
+                      <button class="segment-btn" data-risk="A+">A+</button>
+                      <button class="segment-btn active" data-risk="A">A</button>
+                      <button class="segment-btn" data-risk="B+">B+</button>
+                      <button class="segment-btn" data-risk="B-">B-</button>
+                      <button class="segment-btn" data-risk="C">C</button>
+                    </div>
+                  </div>
+                  <button class="btn-deck-action btn-neon-blue" id="btn-apply-parameters">Apply Parameters</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>

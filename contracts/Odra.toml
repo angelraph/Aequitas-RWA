@@ -1,0 +1,10 @@
+[info]
+odra_version = "0.25.0"
+
+[[contracts]]
+name = "rwa_token"
+fqn = "aequitas_contracts::RwaToken"
+
+[[contracts]]
+name = "aequitas_vault"
+fqn = "aequitas_contracts::AequitasVault"
