@@ -10,19 +10,20 @@ const RISK_MULTIPLIERS = {
 
 export function startTreasuryRouter(addLog, apiPort = 4002, agentState = {}) {
   const agentName = 'Treasury Router';
-  const BASE_URL = `http://localhost:${apiPort}`;
+  const defaultBaseUrl = `http://localhost:${apiPort}`;
 
   addLog(agentName, "Agent started. Monitoring Casper Vault yields and RWA risk scoring...", "info");
 
-  agentState.triggerRouter = () => performRebalancing(true);
+  agentState.triggerRouter = () => performRebalancing(defaultBaseUrl, true);
+  agentState.triggerRouterWithUrl = (customUrl) => performRebalancing(customUrl, true);
 
-  async function performRebalancing(isManual = false) {
+  async function performRebalancing(baseUrl, isManual = false) {
     if (!isManual && agentState.getAutomation && !agentState.getAutomation()) {
       return;
     }
     try {
       // 1. Fetch current on-chain state
-      const stateRes = await fetch(`${BASE_URL}/api/state`);
+      const stateRes = await fetch(`${baseUrl}/api/state`);
       const { ledger } = await stateRes.json();
       
       const vault = ledger.contracts.AequitasVault;
@@ -88,7 +89,7 @@ export function startTreasuryRouter(addLog, apiPort = 4002, agentState = {}) {
         addLog(agentName, "Portfolio deviation threshold exceeded. Preparing reallocation transaction...", "warning");
 
         // 5. Submit reallocation transaction to Vault Contract
-        const reallocateRes = await fetch(`${BASE_URL}/api/contracts/vault-reallocate`, {
+        const reallocateRes = await fetch(`${baseUrl}/api/contracts/vault-reallocate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -112,9 +113,11 @@ export function startTreasuryRouter(addLog, apiPort = 4002, agentState = {}) {
     }
   }
 
-  // Run rebalancing cycle immediately, then every 12 seconds (staggered by 6s from evaluator)
-  setTimeout(() => {
-    performRebalancing();
-    setInterval(performRebalancing, 12000);
-  }, 6000);
+  // Run rebalancing cycle immediately, then every 12 seconds (staggered by 6s from evaluator) (if not in serverless mode)
+  if (!process.env.VERCEL) {
+    setTimeout(() => {
+      performRebalancing(defaultBaseUrl);
+      setInterval(() => performRebalancing(defaultBaseUrl), 12000);
+    }, 6000);
+  }
 }

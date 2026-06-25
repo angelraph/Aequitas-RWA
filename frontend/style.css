@@ -130,6 +130,11 @@ body {
   box-shadow: 0 0 8px var(--neon-green);
 }
 
+.status-dot.red {
+  background-color: var(--neon-pink);
+  box-shadow: 0 0 8px var(--neon-pink);
+}
+
 .animate-pulse {
   animation: pulse 1.8s infinite;
 }

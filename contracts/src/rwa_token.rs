@@ -1,7 +1,7 @@
 use odra::prelude::*;
-use odra::types::{Address, U256};
+use odra::casper_types::U256;
 
-#[odra::module]
+#[odra::module(events = [Transfer, Approval, AssetUpdated])]
 pub struct RwaToken {
     name: Var<String>,
     symbol: Var<String>,
@@ -18,26 +18,38 @@ pub struct RwaToken {
     is_active: Var<bool>,
 }
 
-#[derive(odra::Event, Debug, PartialEq, Eq)]
+#[odra::event]
 pub struct Transfer {
-    #[odra(index)]
     pub from: Option<Address>,
-    #[odra(index)]
     pub to: Option<Address>,
     pub amount: U256,
 }
 
-#[derive(odra::Event, Debug, PartialEq, Eq)]
+#[odra::event]
 pub struct Approval {
-    #[odra(index)]
     pub owner: Address,
-    #[odra(index)]
     pub spender: Address,
     pub amount: U256,
 }
 
-#[derive(odra::Event, Debug, PartialEq, Eq)]
+#[odra::event]
 pub struct AssetUpdated {
+    pub valuation: U256,
+    pub risk_rating: String,
+    pub yield_rate: u32,
+}
+
+#[odra::odra_error]
+pub enum Error {
+    InsufficientBalance = 30001,
+    InsufficientAllowance = 30002,
+    Unauthorized = 30003,
+}
+
+#[odra::odra_type]
+pub struct RwaMetadata {
+    pub name: String,
+    pub symbol: String,
     pub valuation: U256,
     pub risk_rating: String,
     pub yield_rate: u32,
@@ -103,7 +115,7 @@ impl RwaToken {
         let from = self.env().caller();
         let from_balance = self.balances.get_or_default(&from);
         if from_balance < amount {
-            self.env().revert(30001); // Custom error code for insufficient balance
+            self.env().revert(Error::InsufficientBalance);
         }
         
         self.balances.set(&from, from_balance - amount);
@@ -127,12 +139,12 @@ impl RwaToken {
         let spender = self.env().caller();
         let allowance = self.allowances.get_or_default(&(from, spender));
         if allowance < amount {
-            self.env().revert(30002); // Insufficient allowance
+            self.env().revert(Error::InsufficientAllowance);
         }
 
         let from_balance = self.balances.get_or_default(&from);
         if from_balance < amount {
-            self.env().revert(30001); // Insufficient balance
+            self.env().revert(Error::InsufficientBalance);
         }
 
         self.allowances.set(&(from, spender), allowance - amount);
@@ -150,11 +162,11 @@ impl RwaToken {
     // Agent Entrypoint: Risk pricing updates
     pub fn update_asset_data(&mut self, valuation: U256, risk_rating: String, yield_rate: u32) {
         let caller = self.env().caller();
-        let issuer = self.issuer.get_or_default();
+        let issuer = self.issuer.get().unwrap();
         
         // In prototype, only issuer (creator/agent) can update
         if caller != issuer {
-            self.env().revert(30003); // Unauthorized
+            self.env().revert(Error::Unauthorized);
         }
 
         self.valuation.set(valuation);
@@ -168,13 +180,13 @@ impl RwaToken {
         });
     }
 
-    pub fn get_metadata(&self) -> (String, String, U256, String, u32) {
-        (
-            self.name.get_or_default(),
-            self.symbol.get_or_default(),
-            self.valuation.get_or_default(),
-            self.risk_rating.get_or_default(),
-            self.yield_rate.get_or_default(),
-        )
+    pub fn get_metadata(&self) -> RwaMetadata {
+        RwaMetadata {
+            name: self.name.get_or_default(),
+            symbol: self.symbol.get_or_default(),
+            valuation: self.valuation.get_or_default(),
+            risk_rating: self.risk_rating.get_or_default(),
+            yield_rate: self.yield_rate.get_or_default(),
+        }
     }
 }

@@ -1,5 +1,5 @@
 [info]
-odra_version = "0.25.0"
+odra_version = "2.8.1"
 
 [[contracts]]
 name = "rwa_token"

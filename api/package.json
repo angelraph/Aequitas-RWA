@@ -2,10 +2,10 @@
   "name": "aequitas-rwa-server",
   "version": "1.0.0",
   "description": "Mock Casper network ledger, x402 simulator, and agent coordinator",
-  "main": "server.js",
+  "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

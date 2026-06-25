@@ -133,6 +133,48 @@ const agentState = {
   triggerRouter: null
 };
 
+let lastSimulationTick = 0;
+const SIMULATION_TICK_INTERVAL = 12000;
+
+// Middleware to advance simulation on Vercel Serverless environment
+app.use(async (req, res, next) => {
+  if (process.env.VERCEL) {
+    const host = req.headers.host;
+    const protocol = req.headers['x-forwarded-proto'] || 'http';
+    const currentBaseUrl = `${protocol}://${host}`;
+
+    if (!agentState.initialized) {
+      addLog('System', 'Aequitas RWA blockchain network simulator serverless init.', 'info');
+      startRiskEvaluator(addLog, 4002, agentState);
+      startTreasuryRouter(addLog, 4002, agentState);
+      agentState.initialized = true;
+    }
+
+    const now = Date.now();
+    if (now - lastSimulationTick > SIMULATION_TICK_INTERVAL) {
+      lastSimulationTick = now;
+      console.log(`--- Serverless Simulation Tick Started: ${currentBaseUrl} ---`);
+      
+      if (agentState.triggerEvaluatorWithUrl) {
+        try {
+          await agentState.triggerEvaluatorWithUrl(currentBaseUrl);
+        } catch (e) {
+          console.error('Error ticking evaluator:', e);
+        }
+      }
+      if (agentState.triggerRouterWithUrl) {
+        try {
+          await agentState.triggerRouterWithUrl(currentBaseUrl);
+        } catch (e) {
+          console.error('Error ticking router:', e);
+        }
+      }
+      console.log('--- Serverless Simulation Tick Finished ---');
+    }
+  }
+  next();
+});
+
 // Get full system state (frontend queries this)
 app.get('/api/state', (req, res) => {
   res.json({
@@ -568,6 +610,47 @@ app.post('/api/contracts/vault-reallocate', (req, res) => {
   res.json({ success: true, txHash });
 });
 
+// Casper Testnet RPC Status checker
+app.get('/api/casper/status', async (req, res) => {
+  try {
+    const response = await fetch('https://node.testnet.casper.network/rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'info_get_status',
+        id: 1
+      }),
+      signal: AbortSignal.timeout(4000)
+    });
+
+    if (!response.ok) {
+      throw new Error(`RPC status returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data && data.result) {
+      const height = data.result.last_added_block_info ? data.result.last_added_block_info.height : null;
+      const chain = data.result.chainspec_name || 'casper-testnet';
+      const version = data.result.api_version || 'unknown';
+      return res.json({
+        status: 'CONNECTED',
+        blockHeight: height,
+        chain: chain,
+        version: version
+      });
+    }
+    throw new Error('Invalid RPC response format');
+  } catch (error) {
+    return res.json({
+      status: 'OFFLINE',
+      blockHeight: null,
+      chain: 'casper-testnet',
+      error: error.message
+    });
+  }
+});
+
 // ----------------------------------------------------
 // Setup Server Listen & WebSocket Upgrade
 // ----------------------------------------------------
@@ -583,17 +666,22 @@ wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'INIT_STATE', data: { ledger: LEDGER, offChain: OFF_CHAIN_PREMIUM_SOURCE, logs, agentAutomation } }));
 });
 
-server.listen(PORT, () => {
-  console.log(`====================================================`);
-  console.log(`Aequitas RWA Casper Swarm Network Emulator Running`);
-  console.log(`HTTP/WS Server: http://localhost:${PORT}`);
-  console.log(`====================================================`);
-  
-  // Add initial logs
-  addLog('System', 'Aequitas RWA blockchain network simulator boot completed.', 'info');
-  addLog('System', 'MCP client server connected. Active nodes: Risk Evaluator, Treasury Router.', 'info');
+if (!process.env.VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`====================================================`);
+    console.log(`Aequitas RWA Casper Swarm Network Emulator Running`);
+    console.log(`HTTP/WS Server: http://localhost:${PORT}`);
+    console.log(`====================================================`);
+    
+    // Add initial logs
+    addLog('System', 'Aequitas RWA blockchain network simulator boot completed.', 'info');
+    addLog('System', 'MCP client server connected. Active nodes: Risk Evaluator, Treasury Router.', 'info');
 
-  // Start the autonomous agents!
-  startRiskEvaluator(addLog, PORT, agentState);
-  startTreasuryRouter(addLog, PORT, agentState);
-});
+    // Start the autonomous agents!
+    startRiskEvaluator(addLog, PORT, agentState);
+    startTreasuryRouter(addLog, PORT, agentState);
+  });
+}
+
+export default app;
+

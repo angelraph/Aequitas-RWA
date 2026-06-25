@@ -1,7 +1,7 @@
 use odra::prelude::*;
-use odra::types::{Address, U256};
+use odra::casper_types::U256;
 
-#[odra::module]
+#[odra::module(events = [Deposit, Withdraw, CapitalReallocated])]
 pub struct AequitasVault {
     balances: Mapping<Address, U256>,
     total_deposits: Var<U256>,
@@ -10,26 +10,30 @@ pub struct AequitasVault {
     owner: Var<Address>,
 }
 
-#[derive(odra::Event, Debug, PartialEq, Eq)]
+#[odra::event]
 pub struct Deposit {
-    #[odra(index)]
     pub depositor: Address,
     pub amount: U256,
 }
 
-#[derive(odra::Event, Debug, PartialEq, Eq)]
+#[odra::event]
 pub struct Withdraw {
-    #[odra(index)]
     pub depositor: Address,
     pub amount: U256,
 }
 
-#[derive(odra::Event, Debug, PartialEq, Eq)]
+#[odra::event]
 pub struct CapitalReallocated {
-    #[odra(index)]
     pub rwa_token: Address,
     pub amount: U256,
     pub is_add: bool,
+}
+
+#[odra::odra_error]
+pub enum Error {
+    InsufficientVaultBalance = 40001,
+    UnauthorizedRouter = 40002,
+    InsufficientAllocation = 40003,
 }
 
 #[odra::module]
@@ -63,7 +67,7 @@ impl AequitasVault {
         let balance = self.balances.get_or_default(&caller);
         
         if balance < amount {
-            self.env().revert(40001); // Insufficient vault balance
+            self.env().revert(Error::InsufficientVaultBalance);
         }
 
         self.balances.set(&caller, balance - amount);
@@ -81,10 +85,10 @@ impl AequitasVault {
 
     pub fn reallocate_capital(&mut self, rwa_token: Address, amount: U256, is_add: bool) {
         let caller = self.env().caller();
-        let router = self.authorized_router.get_or_default();
+        let router = self.authorized_router.get().unwrap();
         
         if caller != router {
-            self.env().revert(40002); // Unauthorized router call
+            self.env().revert(Error::UnauthorizedRouter);
         }
 
         let current_allocation = self.allocations.get_or_default(&rwa_token);
@@ -94,7 +98,7 @@ impl AequitasVault {
         } else {
             // Redeem capital from RwaToken
             if current_allocation < amount {
-                self.env().revert(40003); // Insufficient allocation to reduce
+                self.env().revert(Error::InsufficientAllocation);
             }
             self.allocations.set(&rwa_token, current_allocation - amount);
         }
@@ -119,6 +123,6 @@ impl AequitasVault {
     }
 
     pub fn get_router(&self) -> Address {
-        self.authorized_router.get_or_default()
+        self.authorized_router.get().unwrap()
     }
 }

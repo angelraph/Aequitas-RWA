@@ -2,19 +2,20 @@
 
 export function startRiskEvaluator(addLog, apiPort = 4002, agentState = {}) {
   const agentName = 'Risk Evaluator';
-  const BASE_URL = `http://localhost:${apiPort}`;
+  const defaultBaseUrl = `http://localhost:${apiPort}`;
 
   addLog(agentName, "Agent started. Monitoring real-world asset (RWA) risk channels...", "info");
 
-  agentState.triggerEvaluator = () => checkAssets(true);
+  agentState.triggerEvaluator = () => checkAssets(defaultBaseUrl, true);
+  agentState.triggerEvaluatorWithUrl = (customUrl) => checkAssets(customUrl, true);
 
-  async function checkAssets(isManual = false) {
+  async function checkAssets(baseUrl, isManual = false) {
     if (!isManual && agentState.getAutomation && !agentState.getAutomation()) {
       return;
     }
     try {
       // 1. Fetch current on-chain state to find registered RWA contracts
-      const stateRes = await fetch(`${BASE_URL}/api/state`);
+      const stateRes = await fetch(`${baseUrl}/api/state`);
       const { ledger } = await stateRes.json();
       const assets = Object.keys(ledger.contracts).filter(k => k.startsWith('RWA-'));
 
@@ -22,7 +23,7 @@ export function startRiskEvaluator(addLog, apiPort = 4002, agentState = {}) {
         addLog(agentName, `Analyzing market conditions for ${assetId}...`, "info");
         
         // 2. Fetch premium valuation/risk data (This is where x402 comes in)
-        const premiumUrl = `${BASE_URL}/api/premium-data?assetId=${assetId}`;
+        const premiumUrl = `${baseUrl}/api/premium-data?assetId=${assetId}`;
         let response = await fetch(premiumUrl);
 
         if (response.status === 402) {
@@ -43,7 +44,7 @@ export function startRiskEvaluator(addLog, apiPort = 4002, agentState = {}) {
 
           addLog(agentName, `Authorizing micropayment of ${amount} CSPR. Signing reference ${reference}...`, "info");
           
-          const settleRes = await fetch(`${BASE_URL}/api/x402/settle`, {
+          const settleRes = await fetch(`${baseUrl}/api/x402/settle`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -81,7 +82,7 @@ export function startRiskEvaluator(addLog, apiPort = 4002, agentState = {}) {
           if (needsUpdate) {
             addLog(agentName, `Discrepancy detected for ${assetId}. Initiating Casper Smart Contract update transaction...`, "warning");
             
-            const updateRes = await fetch(`${BASE_URL}/api/contracts/update-asset`, {
+            const updateRes = await fetch(`${baseUrl}/api/contracts/update-asset`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -111,8 +112,11 @@ export function startRiskEvaluator(addLog, apiPort = 4002, agentState = {}) {
     }
   }
 
-  // Run evaluator cycle immediately, then every 12 seconds
-  checkAssets();
-  const interval = setInterval(checkAssets, 12000);
+  // Run evaluator cycle immediately, then every 12 seconds (if not in serverless mode)
+  let interval = null;
+  if (!process.env.VERCEL) {
+    checkAssets(defaultBaseUrl);
+    interval = setInterval(() => checkAssets(defaultBaseUrl), 12000);
+  }
   return interval;
 }

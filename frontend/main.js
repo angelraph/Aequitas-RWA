@@ -488,14 +488,28 @@ function syncSlidersToSelectedAsset() {
 }
 
 // ----------------------------------------------------
-// WebSocket logs subscription
+// WebSocket logs subscription & Fallback HTTP Polling
 // ----------------------------------------------------
+let isPolling = false;
+let pollingInterval = null;
+const displayedLogsSet = new Set();
+
 function connectWebSocket() {
-  const wsUrl = `ws://${window.location.host}`;
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+  const wsUrl = `${wsProtocol}${window.location.host}`;
+  console.log('Attempting WebSocket connection to:', wsUrl);
   socket = new WebSocket(wsUrl);
 
   socket.onopen = () => {
     console.log('WS Connection Established.');
+    if (isPolling) {
+      console.log('Reconnected to WebSocket. Stopping HTTP polling fallback.');
+      isPolling = false;
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+    }
   };
 
   socket.onmessage = (event) => {
@@ -505,8 +519,15 @@ function connectWebSocket() {
       updateUI(msg.data);
       const consoleOutput = document.getElementById('console-output');
       consoleOutput.innerHTML = '';
-      msg.data.logs.forEach(log => appendConsoleLog(log));
+      displayedLogsSet.clear();
+      msg.data.logs.forEach(log => {
+        const logKey = `${log.timestamp}-${log.agent}-${log.message}`;
+        displayedLogsSet.add(logKey);
+        appendConsoleLog(log);
+      });
     } else if (msg.type === 'LOG') {
+      const logKey = `${msg.data.timestamp}-${msg.data.agent}-${msg.data.message}`;
+      displayedLogsSet.add(logKey);
       appendConsoleLog(msg.data);
       triggerSwarmParticleEffect(msg.data);
     } else if (msg.type === 'LAYOUT_UPDATE') {
@@ -517,10 +538,89 @@ function connectWebSocket() {
     }
   };
 
+  socket.onerror = (err) => {
+    console.warn('WebSocket error encountered:', err);
+    startPollingFallback();
+  };
+
   socket.onclose = () => {
-    setTimeout(connectWebSocket, 3000);
+    console.warn('WebSocket connection closed. Initiating polling fallback & reconnecting...');
+    startPollingFallback();
+    setTimeout(connectWebSocket, 5000);
   };
 }
+
+function startPollingFallback() {
+  if (isPolling) return;
+  isPolling = true;
+  console.log('Fallback to HTTP Polling active.');
+  
+  pollState();
+  pollingInterval = setInterval(pollState, 3000);
+}
+
+async function pollState() {
+  try {
+    const res = await fetch('/api/state');
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const state = await res.json();
+    
+    updateUI(state);
+    
+    if (state.logs && state.logs.length > 0) {
+      state.logs.forEach(log => {
+        const logKey = `${log.timestamp}-${log.agent}-${log.message}`;
+        if (!displayedLogsSet.has(logKey)) {
+          displayedLogsSet.add(logKey);
+          appendConsoleLog(log);
+          triggerSwarmParticleEffect(log);
+        }
+      });
+      if (displayedLogsSet.size > 1000) {
+        const keys = Array.from(displayedLogsSet).slice(-500);
+        displayedLogsSet.clear();
+        keys.forEach(k => displayedLogsSet.add(k));
+      }
+    }
+  } catch (err) {
+    console.error('HTTP Polling error:', err);
+  }
+}
+
+async function updateCasperStatus() {
+  try {
+    const res = await fetch('/api/casper/status');
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    
+    const statusText = document.getElementById('casper-net-status');
+    const statusDot = document.getElementById('casper-net-dot');
+    
+    if (statusText && statusDot) {
+      if (data.status === 'CONNECTED') {
+        statusText.innerHTML = `CONNECTED (Block #${data.blockHeight.toLocaleString()})`;
+        statusText.className = 'text-neon-blue';
+        statusDot.className = 'status-dot green animate-pulse';
+      } else {
+        statusText.innerHTML = 'OFFLINE';
+        statusText.className = 'text-neon-pink';
+        statusDot.className = 'status-dot red animate-pulse';
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching Casper status:', err);
+    const statusText = document.getElementById('casper-net-status');
+    const statusDot = document.getElementById('casper-net-dot');
+    if (statusText) {
+      statusText.innerHTML = 'OFFLINE';
+      statusText.className = 'text-neon-pink';
+    }
+    if (statusDot) {
+      statusDot.className = 'status-dot red animate-pulse';
+    }
+  }
+}
+
 
 // Filter and append logs to console
 function appendConsoleLog(log) {
@@ -1005,3 +1105,7 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 drawSwarm();
 connectWebSocket();
+
+// Casper Testnet status updates
+updateCasperStatus();
+setInterval(updateCasperStatus, 15000);
