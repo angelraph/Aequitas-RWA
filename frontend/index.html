@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aequitas RWA | Casper Autonomous Multi-Agent Swarm Staking</title>
+  <title>Aequitas RWA | AI Autonomous Investment Portal</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,338 +12,261 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Deep neon background effects -->
-  <div class="glow-bg-1"></div>
-  <div class="glow-bg-2"></div>
 
-  <div class="dashboard-container">
-    <!-- Header -->
-    <header class="dashboard-header">
-      <div class="header-logo">
-        <span class="logo-accent">Aequitas</span> RWA
-        <span class="badge-beta">PRO-SUBMISSION</span>
+  <!-- Onboarding Wizard Overlay -->
+  <div class="onboarding-overlay" id="onboarding-wizard">
+    <div class="onboarding-card">
+      <div class="onboarding-progress">
+        <div class="progress-bar" id="onboarding-bar"></div>
       </div>
-      <div class="network-status">
-        <div class="status-item">
-          <span class="status-dot green animate-pulse" id="casper-net-dot"></span>
-          <span>Casper Testnet: <strong class="text-neon-blue" id="casper-net-status">CONNECTING...</strong></span>
+      
+      <!-- Welcome Step -->
+      <div class="onboarding-step active" id="onboarding-step-1">
+        <div class="onboarding-logo"><span class="logo-accent">Aequitas</span> RWA</div>
+        <h2 class="onboarding-title">Staking Real-World Assets, Made Simple</h2>
+        <p class="onboarding-desc">Earn stable institutional yields backed by real estate, supply invoices, and commercial credit directly on-chain.</p>
+        <button class="btn-action-primary" onclick="nextOnboardingStep(2)">Get Started &rarr;</button>
+      </div>
+
+      <!-- What Aequitas Does Step -->
+      <div class="onboarding-step" id="onboarding-step-2">
+        <h2 class="onboarding-title">How It Works</h2>
+        <p class="onboarding-desc">Aequitas coordinates a swarm of AI agents that continuously scrape credit ratings, settle pay-per-use data micropayments, and rebalance your capital into the most optimal assets.</p>
+        <button class="btn-action-primary" onclick="nextOnboardingStep(3)">Continue &rarr;</button>
+      </div>
+
+      <!-- Benefits Step -->
+      <div class="onboarding-step" id="onboarding-step-3">
+        <h2 class="onboarding-title">Key Advantages</h2>
+        <p class="onboarding-desc">🔒 **Institutional Security**: Managed by secure Odra 2.8.1 Casper smart contracts.<br>📊 **Automated Risk Engine**: Continuous Sharpe Ratio & Value at Risk calculation.<br>⚡ **Zero Jargon**: AI manages allocations for you.</p>
+        <button class="btn-action-primary" onclick="nextOnboardingStep(4)">Next &rarr;</button>
+      </div>
+
+      <!-- Connect Wallet Step -->
+      <div class="onboarding-step" id="onboarding-step-4">
+        <h2 class="onboarding-title">Link Your Staking Wallet</h2>
+        <p class="onboarding-desc">Link your Casper Signer wallet to sign allocations. If you don't have one, start instantly using our pre-funded Sandbox Demo Wallet.</p>
+        <button class="btn-action-primary" id="btn-onboard-connect-real" style="background:var(--brand-purple); color:#fff; margin-bottom:8px;">
+          🔌 Connect Casper Wallet
+        </button>
+        <button class="btn-action-secondary" onclick="useDemoWalletMode()">
+          ⚡ Sandbox Demo Mode (Pre-funded)
+        </button>
+      </div>
+
+      <!-- Verify Identity (KYC/AML) Step -->
+      <div class="onboarding-step" id="onboarding-step-5">
+        <h2 class="onboarding-title">Register Compliance State</h2>
+        <p class="onboarding-desc">Aequitas Vaults enforce standard sanctions compliance directly on the blockchain. Click below to verify identity and publish a secure ZK compliance proof on-chain.</p>
+        <div id="compliance-loader-onboard" style="display:none; text-align:center; padding:10px;">
+          <div class="spinner-glow" style="margin:0 auto 10px; width:30px; height:30px;"></div>
+          <span style="font-size:0.8rem; color:var(--brand-orange)">Publishing ZK Suitability Proof Hash...</span>
         </div>
-        <div class="status-item">
-          <span class="status-dot green animate-pulse"></span>
-          <span>x402 Facilitator: <strong class="text-neon-pink">ACTIVE</strong></span>
+        <button class="btn-action-primary" id="btn-onboard-kyc" onclick="runOnboardKYC()">Run KYC Sanctions Screen</button>
+      </div>
+
+      <!-- Choose Investment Goal Step -->
+      <div class="onboarding-step" id="onboarding-step-6">
+        <h2 class="onboarding-title">Select Your Yield Strategy</h2>
+        <p class="onboarding-desc">Our Yield and Risk agents will construct an asset allocation that aligns with your goal profile.</p>
+        <div class="quick-goals-group" style="display:flex; flex-direction:column; gap:8px; width:100%;">
+          <button class="btn-action-secondary" onclick="selectStrategy('conservative')">🛡️ Conservative Income (Stable, Lower Risk)</button>
+          <button class="btn-action-secondary" onclick="selectStrategy('balanced')">⚖️ Balanced Growth (Moderate Risk)</button>
+          <button class="btn-action-secondary" onclick="selectStrategy('aggressive')">🚀 Aggressive Yield (Maximise APY, Higher Risk)</button>
         </div>
-        <div class="status-item">
-          <span class="status-dot green animate-pulse"></span>
-          <span>Swarm State: <strong class="text-neon-green">6/6 AGENTS ACTIVE</strong></span>
+      </div>
+
+      <!-- Confirm Investment Step -->
+      <div class="onboarding-step" id="onboarding-step-7">
+        <h2 class="onboarding-title">Verify Recommendation</h2>
+        <div id="strategy-recommendation-summary" style="background:rgba(255,255,255,0.03); padding:12px; border-radius:var(--radius-md); font-size:0.85rem;">
+          <!-- Loaded dynamically -->
         </div>
+        <button class="btn-action-primary" onclick="confirmOnboardingStaking()">Launch Portfolio & Staking &rarr;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Real-time Blockchain Transaction Modal overlay -->
+  <div class="tx-status-overlay" id="tx-modal">
+    <div class="spinner-glow"></div>
+    <h3 style="font-size:1.2rem; font-weight:700; margin-bottom:8px;" id="tx-modal-title">Preparing Transaction</h3>
+    <p style="color:var(--text-secondary); font-size:0.9rem; text-align:center; max-width:300px;" id="tx-modal-desc">Communicating with Casper wallet provider...</p>
+    <div id="tx-modal-action-box" style="margin-top:20px; width:100%; display:none;">
+      <button class="btn-action-primary" onclick="closeTxModal()">Return to Dashboard</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="top-navbar">
+      <div class="navbar-brand"><span class="logo-accent">Aequitas</span> RWA</div>
+      
+      <!-- Desktop Tab Bar (Hidden on Mobile) -->
+      <div class="desktop-nav-header" style="display:none;">
+        <a href="#" class="nav-item-desktop active" onclick="switchPane('home')">Home</a>
+        <a href="#" class="nav-item-desktop" onclick="switchPane('invest')">AI Advisor</a>
+        <a href="#" class="nav-item-desktop" onclick="switchPane('assets')">RWA Assets</a>
+        <a href="#" class="nav-item-desktop" onclick="switchPane('activity')">Activity</a>
+      </div>
+
+      <div class="wallet-badge-nav" id="wallet-pill" onclick="disconnectWalletTrigger()">
+        🔌 CONNECTED: user_wallet
       </div>
     </header>
 
-    <!-- Main Layout Grid -->
-    <div class="dashboard-grid">
-      <!-- Left Panel: Vault & Portfolio Controls -->
-      <section class="grid-panel panel-left card-glass">
-        <div class="panel-header">
-          <h2>Yield Vault Control</h2>
-          <span class="header-icon">🛡️</span>
+    <!-- Pane 1: Home / Portfolio Overview -->
+    <main class="content-pane active" id="pane-home">
+      <div class="card-premium portfolio-value-card">
+        <span class="portfolio-label">Total Portfolio Staked</span>
+        <div class="portfolio-amount" id="tvl-value">150,000.00 CSPR</div>
+        <div class="portfolio-change">
+          <span>&uarr; 0.45% Today</span>
         </div>
+      </div>
+
+      <!-- Quick stats column -->
+      <div class="metrics-row">
+        <div class="metric-pill">
+          <span class="metric-pill-label">Annualized Yield (APY)</span>
+          <span class="metric-pill-value text-neon-green" id="avg-yield">8.15%</span>
+        </div>
+        <div class="metric-pill">
+          <span class="metric-pill-label">Composite Safety Score</span>
+          <span class="metric-pill-value text-neon-purple" id="risk-health">90/100</span>
+        </div>
+        <div class="metric-pill">
+          <span class="metric-pill-label">Value at Risk (VaR)</span>
+          <span class="metric-pill-value text-neon-pink" id="risk-var">1,240 CSPR</span>
+        </div>
+        <div class="metric-pill">
+          <span class="metric-pill-label">Sharpe Ratio</span>
+          <span class="metric-pill-value text-neon-blue" id="risk-sharpe">1.82</span>
+        </div>
+      </div>
+
+      <!-- Asset Allocation card -->
+      <div class="card-premium">
+        <h3 class="section-title" style="font-size:1.1rem;">Asset Allocation</h3>
+        <div class="allocation-list" id="allocation-bars">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Quick interactive Staking card -->
+      <div class="card-premium">
+        <h3 class="section-title" style="font-size:1.1rem;">Interactive Staking</h3>
+        <div style="display:flex; border: 1px solid var(--card-border); border-radius:var(--radius-sm); overflow:hidden; background:rgba(0,0,0,0.1);">
+          <button style="flex:1; border:none; padding:10px; color:#fff; font-weight:bold; cursor:pointer;" id="quick-stake-tab" class="btn-action-primary" onclick="setStakingAction('deposit')">Deposit</button>
+          <button style="flex:1; border:none; padding:10px; color:var(--text-secondary); background:transparent; font-weight:bold; cursor:pointer;" id="quick-unstake-tab" onclick="setStakingAction('withdraw')">Withdraw</button>
+        </div>
+        <div class="input-group" style="display:flex; flex-direction:column; gap:4px; margin-top:8px;">
+          <label style="font-size:0.8rem; color:var(--text-secondary);">Enter Amount (CSPR)</label>
+          <div style="position:relative; display:flex;">
+            <input type="number" id="amount-input" value="5000" style="flex:1; background:rgba(255,255,255,0.04); border:1px solid var(--card-border); color:#fff; padding:12px; border-radius:var(--radius-sm); outline:none;">
+            <span style="position:absolute; right:12px; top:12px; color:var(--text-secondary); font-size:0.9rem;">CSPR</span>
+          </div>
+        </div>
+        <button class="btn-action-primary" id="btn-submit-action" onclick="executeStakingTransaction()">Stake CSPR</button>
+      </div>
+    </main>
+
+    <!-- Pane 2: AI Advisor Terminal -->
+    <section class="content-pane" id="pane-invest">
+      <div class="card-premium">
+        <h3 class="section-title">AI Staking Advisor</h3>
+        <p class="section-subtitle">State your financial preferences or type a custom command. Our agent swarm will construct, screen, and route yields accordingly.</p>
         
-        <!-- TVL & Stats -->
-        <div class="vault-stats">
-          <div class="stat-card">
-            <span class="stat-label">Total Value Locked (TVL)</span>
-            <div class="stat-value text-neon-blue" id="tvl-value">150,000.00 <span class="unit">CSPR</span></div>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Average Yield Rate (APY)</span>
-            <div class="stat-value text-neon-green" id="avg-yield">8.15%</div>
-          </div>
-        </div>
-
-        <!-- Risk Engine Metrics Grid -->
-        <div class="risk-metrics-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0.5rem 1.2rem; border-bottom: 1px solid var(--border-color);">
-          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
-            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Sharpe Ratio</span>
-            <span class="risk-value text-neon-blue" id="risk-sharpe" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">1.82</span>
-          </div>
-          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
-            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Value at Risk (VaR)</span>
-            <span class="risk-value text-neon-pink" id="risk-var" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">1,240 CSPR</span>
-          </div>
-          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
-            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Diversification</span>
-            <span class="risk-value text-neon-green" id="risk-diversification" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">78%</span>
-          </div>
-          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
-            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Liquidity Score</span>
-            <span class="risk-value text-neon-orange" id="risk-liquidity" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">82%</span>
-          </div>
-          <div class="risk-stat-item" style="grid-column: span 2; background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; justify-content: space-between; align-items: center;">
-            <span class="risk-label" style="font-size: 0.75rem; color: var(--text-muted);">Portfolio Health Score</span>
-            <span class="risk-value text-neon-purple" id="risk-health" style="font-size: 1.2rem; font-weight: bold; font-family: var(--font-family-mono);">90%</span>
-          </div>
-        </div>
-
-        <!-- Deposit / Withdraw Controls -->
-        <div class="vault-actions">
-          <h3>Interactive Actions</h3>
-          <div class="tabs">
-            <button class="tab-btn active" id="tab-deposit">Deposit</button>
-            <button class="tab-btn" id="tab-withdraw">Withdraw</button>
-          </div>
-          <div class="tab-content">
-            <div class="input-group">
-              <label for="amount-input">Amount (CSPR)</label>
-              <div class="input-wrapper">
-                <input type="number" id="amount-input" value="5000" min="1">
-                <span class="input-suffix">CSPR</span>
-              </div>
-            </div>
-            <div class="wallet-balance-info">
-              <span>My Wallet: <strong id="user-balance">500,000.00</strong> CSPR</span>
-            </div>
-            <button class="btn-action btn-neon-blue" id="btn-submit-action">Execute Deposit</button>
-          </div>
-        </div>
-
-        <!-- KYC/AML Compliance Status -->
-        <div class="compliance-status-deck" style="padding: 0.5rem 1.2rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px;">
-          <h3 style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Investor Compliance Credentials</h3>
-          <div class="compliance-badge-row" style="display: flex; justify-content: space-between; align-items: center;">
-            <span class="compliance-badge" id="compliance-badge" style="font-size: 0.75rem; font-family: var(--font-family-mono); padding: 4px 10px; border-radius: 4px; font-weight: bold; background: rgba(0, 255, 102, 0.1); color: var(--neon-green); border: 1px solid rgba(0, 255, 102, 0.2);">VERIFIED</span>
-            <span class="proof-hash-text" id="compliance-proof-hash" style="font-size: 0.7rem; font-family: var(--font-family-mono); color: var(--text-muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">0x54321</span>
-          </div>
-          <div class="compliance-actions" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-            <button class="btn-action-mini" id="btn-kyc-verify" style="font-size: 0.75rem; padding: 6px 12px; cursor: pointer; border-radius: 6px; background: rgba(0, 255, 102, 0.15); color: var(--neon-green); border: 1px solid var(--neon-green);">Run KYC Screen</button>
-            <button class="btn-action-mini" id="btn-kyc-revoke" style="font-size: 0.75rem; padding: 6px 12px; cursor: pointer; border-radius: 6px; background: rgba(255, 0, 127, 0.15); color: var(--neon-pink); border: 1px solid var(--neon-pink);">Revoke Proof</button>
-          </div>
-        </div>
-
-        <!-- Allocation Breakdown -->
-        <div class="portfolio-allocations" style="flex-grow: 1;">
-          <h3>Asset Allocations</h3>
-          <div class="allocation-list" id="allocation-bars">
-            <!-- Dynamic Allocation Bars -->
-            <div class="allocation-item">
-              <div class="allocation-meta">
-                <span>RWA-REAL-101</span>
-                <strong>46.7%</strong>
-              </div>
-              <div class="bar-container">
-                <div class="bar-fill" style="width: 46.7%; background: var(--neon-blue);"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Center Panel: Swarm Visualizer & AI Chat Assistant -->
-      <section class="grid-panel panel-center card-glass" style="display: flex; flex-direction: column;">
-        <div class="panel-header" style="flex-shrink: 0;">
-          <h2>Agent Swarm Visualizer & AI Assistant</h2>
-          <span class="header-icon">🤖</span>
-        </div>
-        
-        <!-- Canvas Visualizer Container (35% height) -->
-        <div class="canvas-container" style="position: relative; height: 35%; min-height: 180px; flex-shrink: 0; border-bottom: 1px solid var(--border-color);">
-          <canvas id="swarmCanvas"></canvas>
-          <div class="inspect-overlay" id="node-inspector" style="display: none;">
-            <div class="inspect-header">
-              <h3 id="inspect-title">Node Details</h3>
-              <button class="inspect-close" id="btn-inspect-close">&times;</button>
-            </div>
-            <div class="inspect-body" id="inspect-content">
-              <!-- Dynamically populated stats -->
-            </div>
-          </div>
-          <div class="legend" style="bottom: 8px;">
-            <span class="legend-item"><span class="legend-dot pink"></span>x402 API</span>
-            <span class="legend-item"><span class="legend-dot purple"></span>Evaluator Agent</span>
-            <span class="legend-item"><span class="legend-dot blue"></span>Router Agent</span>
-            <span class="legend-item"><span class="legend-dot green"></span>RWA Contracts</span>
-          </div>
-        </div>
-
-        <!-- AI Assistant Chat Container (65% height) -->
-        <div class="ai-assistant-container" style="flex-grow: 1; display: flex; flex-direction: column; padding: 1rem; min-height: 280px; background: rgba(0,0,0,0.15);">
-          <h3 style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Autonomous RWA Analyst Swarm Chat</h3>
-          
-          <div class="chat-history" id="chat-history" style="flex-grow: 1; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border-color); padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;">
-            <div class="chat-message assistant" style="padding: 10px; border-radius: 6px; background: rgba(176, 38, 255, 0.08); border-left: 3px solid var(--neon-purple); font-size: 0.88rem; line-height: 1.4;">
-              <strong>Aequitas Swarm Manager:</strong> Welcome. I am your autonomous investment manager. You can enter investment instructions in natural language (e.g. <em>"Invest 50000 aggressively"</em> or <em>"Construct a conservative portfolio"</em>). I will autonomously handle compliance, KYC verification, ZK-proof generation, Casper deposit transactions, and portfolio risk optimization.
+        <div class="ai-chat-window">
+          <div class="ai-chat-history" id="chat-history">
+            <div class="chat-bubble assistant">
+              <strong>Aequitas Advisor Agent:</strong> Hello. I am your automated portfolio advisor. Describe your goals (e.g. <em>"Invest 50,000 CSPR aggressively"</em> or <em>"Construct a conservative portfolio"</em>). I will autonomously handle compliance, KYC proofing, and asset routing.
             </div>
           </div>
 
-          <!-- Collaboration Timeline Monitor -->
-          <div class="agent-collaboration-timeline" id="collaboration-timeline" style="display: none; background: rgba(0,0,0,0.4); border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 8px; padding: 10px; margin-bottom: 8px; font-family: var(--font-family-mono); font-size: 0.78rem; max-height: 150px; overflow-y: auto;">
-            <h4 style="color: var(--neon-blue); font-size: 0.8rem; font-weight: bold; margin-bottom: 6px; text-transform: uppercase;">Swarm Collaboration Board</h4>
-            <div class="timeline-steps" id="timeline-steps">
-              <!-- Dynamically streamed steps -->
+          <!-- Collaboration Timeline inside chat -->
+          <div class="collaboration-board-compact" id="collaboration-timeline">
+            <h4 style="color:var(--brand-blue); font-size:0.75rem; text-transform:uppercase; margin-bottom:6px;">Swarm Consensus Board</h4>
+            <div id="timeline-steps" style="display:flex; flex-direction:column; gap:6px; max-height:100px; overflow-y:auto;">
+              <!-- Streaming timeline updates -->
             </div>
           </div>
-          
-          <div class="chat-input-row" style="display: flex; gap: 8px; flex-shrink: 0;">
-            <input type="text" id="chat-input" placeholder="Type your investment goal (e.g., Invest 25000 conservatively)..." style="flex-grow: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-main); font-family: var(--font-family-sans); font-size: 0.9rem; padding: 10px 14px; border-radius: 8px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--neon-blue)'" onblur="this.style.borderColor='var(--border-color)'">
-            <button class="btn-action btn-neon-blue" id="btn-chat-send" style="width: auto; padding: 0 20px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; margin-top: 0; border-radius: 8px;">Submit Goal</button>
-          </div>
-        </div>
-      </section>
 
-      <!-- Right Panel: Logs Console -->
-      <section class="grid-panel panel-right card-glass">
-        <div class="panel-header">
-          <h2>Autonomous Agent Console</h2>
-          <div class="agent-mode-control">
-            <span class="mode-label">Auto:</span>
-            <button class="btn-toggle active" id="btn-automation-toggle">ON</button>
-          </div>
-        </div>
-        <div class="manual-agent-actions" id="manual-triggers-panel" style="display: none;">
-          <button class="btn-trigger-manual purple" id="btn-trigger-evaluator">Eval Swarm</button>
-          <button class="btn-trigger-manual blue" id="btn-trigger-router">Rebalance Vault</button>
-        </div>
-        <div class="log-filters">
-          <button class="filter-btn active" data-filter="all">All</button>
-          <button class="filter-btn" data-filter="evaluator">Evaluator</button>
-          <button class="filter-btn" data-filter="router">Router</button>
-          <button class="filter-btn" data-filter="x402">x402</button>
-          <button class="filter-btn" data-filter="casper">Casper</button>
-        </div>
-        <div class="console-log" id="console-output">
-          <!-- Logs stream here -->
-          <div class="log-line system">
-            <span class="log-time">[18:00:00]</span>
-            <span class="log-tag">[System]</span> Welcome to Aequitas RWA Swarm Dashboard. Connecting to Casper MCP Node...
-          </div>
-        </div>
-        <div class="console-input-bar">
-          <span class="prompt-symbol">&gt;</span>
-          <input type="text" id="console-cli" placeholder="Type /help for command list...">
-        </div>
-      </section>
-    </div>
-
-    <!-- Bottom Row: Asset Registry & Shocks -->
-    <footer class="dashboard-footer">
-      <div class="grid-panel panel-bottom card-glass">
-        <div class="panel-header">
-          <h2>Fractionalized RWA Registries & Yield Tables</h2>
-          <span class="header-icon">📈</span>
-        </div>
-        <div class="bottom-split">
-          <!-- Table -->
-          <div class="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Asset Contract</th>
-                  <th>Underlying Asset</th>
-                  <th>Valuation (USD)</th>
-                  <th>Risk Rating</th>
-                  <th>Yield Rate (APY)</th>
-                  <th>Capital Allocated</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="asset-table-body">
-                <!-- Dynamic Asset Table Rows -->
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Control Deck (Tabbed Controllers) -->
-          <div class="control-deck">
-            <div class="deck-tabs">
-              <button class="deck-tab active" data-deck-tab="deck-shocks">Macro Shocks</button>
-              <button class="deck-tab" data-deck-tab="deck-deploy">Deploy RWA</button>
-              <button class="deck-tab" data-deck-tab="deck-parameters">Asset Params</button>
-            </div>
-            
-            <div class="deck-content">
-              <!-- Tab 1: Shocks -->
-              <div class="deck-pane active" id="deck-shocks">
-                <p class="pane-desc">Trigger economic scenarios to force agents to reprice assets and route liquidity in real-time.</p>
-                <div class="shocks-controls" id="shocks-controls">
-                  <!-- Dynamic Shocks Controls -->
-                </div>
-              </div>
-              
-              <!-- Tab 2: Deploy Contract -->
-              <div class="deck-pane" id="deck-deploy">
-                <form id="form-deploy-rwa" class="deck-form">
-                  <div class="form-grid">
-                    <div class="form-group">
-                      <label for="deploy-name">Name</label>
-                      <input type="text" id="deploy-name" value="Commercial Plaza" required>
-                    </div>
-                    <div class="form-group">
-                      <label for="deploy-symbol">Symbol (ID)</label>
-                      <input type="text" id="deploy-symbol" value="RWA-PLZ-404" required>
-                    </div>
-                    <div class="form-group">
-                      <label for="deploy-valuation">Valuation (USD)</label>
-                      <input type="number" id="deploy-valuation" value="1000000" min="1000" required>
-                    </div>
-                    <div class="form-group">
-                      <label for="deploy-yield">Yield APY (%)</label>
-                      <input type="number" id="deploy-yield" value="8.50" min="0.1" step="0.01" required>
-                    </div>
-                    <div class="form-group">
-                      <label for="deploy-risk">Risk Rating</label>
-                      <select id="deploy-risk">
-                        <option value="A+">A+</option>
-                        <option value="A" selected>A</option>
-                        <option value="B+">B+</option>
-                        <option value="B-">B-</option>
-                        <option value="C">C</option>
-                      </select>
-                    </div>
-                    <button type="submit" class="btn-deck-action btn-neon-pink">Deploy RWA Token</button>
-                  </div>
-                </form>
-              </div>
-              
-              <!-- Tab 3: Asset Parameters -->
-              <div class="deck-pane" id="deck-parameters">
-                <div class="parameter-controls">
-                  <div class="form-group">
-                    <label for="param-asset-select">Select Asset</label>
-                    <select id="param-asset-select">
-                      <!-- Dynamically populated -->
-                    </select>
-                  </div>
-                  <div class="slider-group">
-                    <div class="slider-label">
-                      <span>Valuation (USD)</span>
-                      <strong id="val-slider-value">$1,200,000</strong>
-                    </div>
-                    <input type="range" id="param-val-slider" min="100000" max="2500000" step="50000" value="1200000">
-                  </div>
-                  <div class="slider-group">
-                    <div class="slider-label">
-                      <span>Yield APY (%)</span>
-                      <strong id="yield-slider-value">7.20%</strong>
-                    </div>
-                    <input type="range" id="param-yield-slider" min="1.0" max="15.0" step="0.05" value="7.20">
-                  </div>
-                  <div class="risk-selector-group">
-                    <label>Risk Rating</label>
-                    <div class="risk-segments" id="param-risk-segments">
-                      <button class="segment-btn" data-risk="A+">A+</button>
-                      <button class="segment-btn active" data-risk="A">A</button>
-                      <button class="segment-btn" data-risk="B+">B+</button>
-                      <button class="segment-btn" data-risk="B-">B-</button>
-                      <button class="segment-btn" data-risk="C">C</button>
-                    </div>
-                  </div>
-                  <button class="btn-deck-action btn-neon-blue" id="btn-apply-parameters">Apply Parameters</button>
-                </div>
-              </div>
-            </div>
+          <div class="ai-chat-input-bar">
+            <input type="text" id="chat-input" placeholder="Type your staking target (e.g. Invest 10000 conservatively)...">
+            <button class="btn-chat-submit" id="btn-chat-send" onclick="submitAIInvestmentGoal()">
+              <span style="color:#000; font-size:1.1rem; font-weight:bold;">&rarr;</span>
+            </button>
           </div>
         </div>
       </div>
-    </footer>
+
+      <!-- Quick prompts -->
+      <div class="card-premium">
+        <h3 class="section-title" style="font-size:1rem;">Preset Investment Targets</h3>
+        <div class="quick-goals-grid">
+          <button class="btn-quick-goal" onclick="submitPresetGoal('Invest 25000 conservatively')">🛡️ Conservative Income Staking</button>
+          <button class="btn-quick-goal" onclick="submitPresetGoal('Staging 50000 with moderate growth targets')">⚖️ Moderate Allocation</button>
+          <button class="btn-quick-goal" onclick="submitPresetGoal('Optimize yield allocation aggressively')">🚀 Maximum APY Route</button>
+          <button class="btn-quick-goal" onclick="submitPresetGoal('Revoke compliance proofs and stop staking')">🚨 Trigger Emergency Exit</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pane 3: Asset Details & parameters -->
+    <section class="content-pane" id="pane-assets">
+      <div class="card-premium">
+        <h3 class="section-title">Fractionalized asset list</h3>
+        <div style="display:flex; flex-direction:column; gap:10px;" id="assets-list-container">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Shock Deck & Parameter Overrides -->
+      <div class="card-premium">
+        <h3 class="section-title" style="font-size:1.1rem;">Simulation & Economic Shocks</h3>
+        <p class="section-subtitle">Adjust market parameters to trigger real-time rebalancing decisions by the agent swarm.</p>
+        
+        <!-- Controls -->
+        <div style="display:flex; gap:8px; border-bottom:1px solid var(--card-border); padding-bottom:10px;">
+          <button class="btn-quick-goal" style="flex:1; text-align:center;" id="btn-automation-toggle">Toggle Automation: ON</button>
+        </div>
+        <div class="shocks-controls" id="shocks-controls" style="display:flex; flex-direction:column; gap:6px;">
+          <!-- Dynamically populated shocks -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Pane 4: Activity Log -->
+    <section class="content-pane" id="pane-activity">
+      <div class="card-premium">
+        <h3 class="section-title">On-Chain Activity</h3>
+        <p class="section-subtitle">Historical records of block deployment, oracle pricing, and rebalancing activities.</p>
+        <div class="console-log" id="console-output" style="background:rgba(0,0,0,0.3); border:1px solid var(--card-border); border-radius:var(--radius-md); padding:12px; height:450px; overflow-y:auto; font-family:var(--font-mono); font-size:0.8rem; line-height:1.6;">
+          <!-- Dynamic ledger activity streams -->
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Navigation Bar (Mobile View) -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" id="nav-home" onclick="switchPane('home')">
+        <span class="nav-icon">📊</span>
+        <span>Home</span>
+      </button>
+      <button class="nav-item" id="nav-invest" onclick="switchPane('invest')">
+        <span class="nav-icon">🤖</span>
+        <span>AI Advisor</span>
+      </button>
+      <button class="nav-item" id="nav-assets" onclick="switchPane('assets')">
+        <span class="nav-icon">📁</span>
+        <span>Assets</span>
+      </button>
+      <button class="nav-item" id="nav-activity" onclick="switchPane('activity')">
+        <span class="nav-icon">📑</span>
+        <span>Activity</span>
+      </button>
+    </nav>
   </div>
 
   <script src="main.js"></script>
