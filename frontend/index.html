@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aequitas RWA | Casper Agentic Yield Routing & Risk Pricing Dashboard</title>
+  <title>Aequitas RWA | Casper Autonomous Multi-Agent Swarm Staking</title>
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,7 @@
     <header class="dashboard-header">
       <div class="header-logo">
         <span class="logo-accent">Aequitas</span> RWA
-        <span class="badge-beta">PROTOTYPE</span>
+        <span class="badge-beta">PRO-SUBMISSION</span>
       </div>
       <div class="network-status">
         <div class="status-item">
@@ -34,7 +34,7 @@
         </div>
         <div class="status-item">
           <span class="status-dot green animate-pulse"></span>
-          <span>Swarm State: <strong class="text-neon-green">RUNNING</strong></span>
+          <span>Swarm State: <strong class="text-neon-green">6/6 AGENTS ACTIVE</strong></span>
         </div>
       </div>
     </header>
@@ -60,6 +60,30 @@
           </div>
         </div>
 
+        <!-- Risk Engine Metrics Grid -->
+        <div class="risk-metrics-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; padding: 0.5rem 1.2rem; border-bottom: 1px solid var(--border-color);">
+          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
+            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Sharpe Ratio</span>
+            <span class="risk-value text-neon-blue" id="risk-sharpe" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">1.82</span>
+          </div>
+          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
+            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Value at Risk (VaR)</span>
+            <span class="risk-value text-neon-pink" id="risk-var" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">1,240 CSPR</span>
+          </div>
+          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
+            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Diversification</span>
+            <span class="risk-value text-neon-green" id="risk-diversification" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">78%</span>
+          </div>
+          <div class="risk-stat-item" style="background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; flex-direction: column;">
+            <span class="risk-label" style="font-size: 0.7rem; color: var(--text-muted);">Liquidity Score</span>
+            <span class="risk-value text-neon-orange" id="risk-liquidity" style="font-size: 1.1rem; font-weight: bold; font-family: var(--font-family-mono);">82%</span>
+          </div>
+          <div class="risk-stat-item" style="grid-column: span 2; background: rgba(255,255,255,0.02); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.03); display: flex; justify-content: space-between; align-items: center;">
+            <span class="risk-label" style="font-size: 0.75rem; color: var(--text-muted);">Portfolio Health Score</span>
+            <span class="risk-value text-neon-purple" id="risk-health" style="font-size: 1.2rem; font-weight: bold; font-family: var(--font-family-mono);">90%</span>
+          </div>
+        </div>
+
         <!-- Deposit / Withdraw Controls -->
         <div class="vault-actions">
           <h3>Interactive Actions</h3>
@@ -82,8 +106,21 @@
           </div>
         </div>
 
+        <!-- KYC/AML Compliance Status -->
+        <div class="compliance-status-deck" style="padding: 0.5rem 1.2rem 1rem; border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px;">
+          <h3 style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Investor Compliance Credentials</h3>
+          <div class="compliance-badge-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <span class="compliance-badge" id="compliance-badge" style="font-size: 0.75rem; font-family: var(--font-family-mono); padding: 4px 10px; border-radius: 4px; font-weight: bold; background: rgba(0, 255, 102, 0.1); color: var(--neon-green); border: 1px solid rgba(0, 255, 102, 0.2);">VERIFIED</span>
+            <span class="proof-hash-text" id="compliance-proof-hash" style="font-size: 0.7rem; font-family: var(--font-family-mono); color: var(--text-muted); max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">0x54321</span>
+          </div>
+          <div class="compliance-actions" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <button class="btn-action-mini" id="btn-kyc-verify" style="font-size: 0.75rem; padding: 6px 12px; cursor: pointer; border-radius: 6px; background: rgba(0, 255, 102, 0.15); color: var(--neon-green); border: 1px solid var(--neon-green);">Run KYC Screen</button>
+            <button class="btn-action-mini" id="btn-kyc-revoke" style="font-size: 0.75rem; padding: 6px 12px; cursor: pointer; border-radius: 6px; background: rgba(255, 0, 127, 0.15); color: var(--neon-pink); border: 1px solid var(--neon-pink);">Revoke Proof</button>
+          </div>
+        </div>
+
         <!-- Allocation Breakdown -->
-        <div class="portfolio-allocations">
+        <div class="portfolio-allocations" style="flex-grow: 1;">
           <h3>Asset Allocations</h3>
           <div class="allocation-list" id="allocation-bars">
             <!-- Dynamic Allocation Bars -->
@@ -100,13 +137,15 @@
         </div>
       </section>
 
-      <!-- Center Panel: Swarm Visualizer -->
-      <section class="grid-panel panel-center card-glass">
-        <div class="panel-header">
-          <h2>Agent Swarm Visualizer</h2>
+      <!-- Center Panel: Swarm Visualizer & AI Chat Assistant -->
+      <section class="grid-panel panel-center card-glass" style="display: flex; flex-direction: column;">
+        <div class="panel-header" style="flex-shrink: 0;">
+          <h2>Agent Swarm Visualizer & AI Assistant</h2>
           <span class="header-icon">🤖</span>
         </div>
-        <div class="canvas-container">
+        
+        <!-- Canvas Visualizer Container (35% height) -->
+        <div class="canvas-container" style="position: relative; height: 35%; min-height: 180px; flex-shrink: 0; border-bottom: 1px solid var(--border-color);">
           <canvas id="swarmCanvas"></canvas>
           <div class="inspect-overlay" id="node-inspector" style="display: none;">
             <div class="inspect-header">
@@ -117,11 +156,35 @@
               <!-- Dynamically populated stats -->
             </div>
           </div>
-          <div class="legend">
+          <div class="legend" style="bottom: 8px;">
             <span class="legend-item"><span class="legend-dot pink"></span>x402 API</span>
             <span class="legend-item"><span class="legend-dot purple"></span>Evaluator Agent</span>
             <span class="legend-item"><span class="legend-dot blue"></span>Router Agent</span>
             <span class="legend-item"><span class="legend-dot green"></span>RWA Contracts</span>
+          </div>
+        </div>
+
+        <!-- AI Assistant Chat Container (65% height) -->
+        <div class="ai-assistant-container" style="flex-grow: 1; display: flex; flex-direction: column; padding: 1rem; min-height: 280px; background: rgba(0,0,0,0.15);">
+          <h3 style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Autonomous RWA Analyst Swarm Chat</h3>
+          
+          <div class="chat-history" id="chat-history" style="flex-grow: 1; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid var(--border-color); padding: 12px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;">
+            <div class="chat-message assistant" style="padding: 10px; border-radius: 6px; background: rgba(176, 38, 255, 0.08); border-left: 3px solid var(--neon-purple); font-size: 0.88rem; line-height: 1.4;">
+              <strong>Aequitas Swarm Manager:</strong> Welcome. I am your autonomous investment manager. You can enter investment instructions in natural language (e.g. <em>"Invest 50000 aggressively"</em> or <em>"Construct a conservative portfolio"</em>). I will autonomously handle compliance, KYC verification, ZK-proof generation, Casper deposit transactions, and portfolio risk optimization.
+            </div>
+          </div>
+
+          <!-- Collaboration Timeline Monitor -->
+          <div class="agent-collaboration-timeline" id="collaboration-timeline" style="display: none; background: rgba(0,0,0,0.4); border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 8px; padding: 10px; margin-bottom: 8px; font-family: var(--font-family-mono); font-size: 0.78rem; max-height: 150px; overflow-y: auto;">
+            <h4 style="color: var(--neon-blue); font-size: 0.8rem; font-weight: bold; margin-bottom: 6px; text-transform: uppercase;">Swarm Collaboration Board</h4>
+            <div class="timeline-steps" id="timeline-steps">
+              <!-- Dynamically streamed steps -->
+            </div>
+          </div>
+          
+          <div class="chat-input-row" style="display: flex; gap: 8px; flex-shrink: 0;">
+            <input type="text" id="chat-input" placeholder="Type your investment goal (e.g., Invest 25000 conservatively)..." style="flex-grow: 1; background: rgba(255,255,255,0.04); border: 1px solid var(--border-color); color: var(--text-main); font-family: var(--font-family-sans); font-size: 0.9rem; padding: 10px 14px; border-radius: 8px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='var(--neon-blue)'" onblur="this.style.borderColor='var(--border-color)'">
+            <button class="btn-action btn-neon-blue" id="btn-chat-send" style="width: auto; padding: 0 20px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; margin-top: 0; border-radius: 8px;">Submit Goal</button>
           </div>
         </div>
       </section>
@@ -192,8 +255,8 @@
           <div class="control-deck">
             <div class="deck-tabs">
               <button class="deck-tab active" data-deck-tab="deck-shocks">Macro Shocks</button>
-              <button class="deck-tab" data-deck-tab="deck-deploy">Deploy Contract</button>
-              <button class="deck-tab" data-deck-tab="deck-parameters">Asset Parameters</button>
+              <button class="deck-tab" data-deck-tab="deck-deploy">Deploy RWA</button>
+              <button class="deck-tab" data-deck-tab="deck-parameters">Asset Params</button>
             </div>
             
             <div class="deck-content">

@@ -332,20 +332,56 @@ function updateUI(state) {
   const tvl = parseFloat(vault.totalDeposits);
   document.getElementById('tvl-value').innerHTML = `${tvl.toLocaleString(undefined, { minimumFractionDigits: 2 })} <span class="unit">CSPR</span>`;
   
-  // APY weighting
-  let weightedApySum = 0;
-  let totalAllocated = 0;
-  const rwaKeys = Object.keys(ledger.contracts).filter(k => k.startsWith('RWA-'));
+  if (state.risk) {
+    document.getElementById('avg-yield').innerText = `${state.risk.avgYield.toFixed(2)}%`;
+    document.getElementById('risk-sharpe').innerText = state.risk.sharpeRatio.toFixed(2);
+    document.getElementById('risk-var').innerText = `${state.risk.valueAtRisk.toLocaleString()} CSPR`;
+    document.getElementById('risk-diversification').innerText = `${state.risk.diversificationScore}%`;
+    document.getElementById('risk-liquidity').innerText = `${state.risk.liquidityScore}%`;
+    document.getElementById('risk-health').innerText = `${state.risk.healthScore}%`;
+  } else {
+    // APY weighting fallback
+    let weightedApySum = 0;
+    let totalAllocated = 0;
+    const rwaKeys = Object.keys(ledger.contracts).filter(k => k.startsWith('RWA-'));
 
-  rwaKeys.forEach(assetId => {
-    const contract = ledger.contracts[assetId];
-    const allocation = parseFloat(vault.allocations[assetId] || '0');
-    weightedApySum += (contract.yieldRate / 100) * allocation;
-    totalAllocated += allocation;
-  });
+    rwaKeys.forEach(assetId => {
+      const contract = ledger.contracts[assetId];
+      const allocation = parseFloat(vault.allocations[assetId] || '0');
+      weightedApySum += (contract.yieldRate / 100) * allocation;
+      totalAllocated += allocation;
+    });
 
-  const avgApy = totalAllocated > 0 ? (weightedApySum / totalAllocated) : 7.85;
-  document.getElementById('avg-yield').innerText = `${avgApy.toFixed(2)}%`;
+    const avgApy = totalAllocated > 0 ? (weightedApySum / totalAllocated) : 7.85;
+    document.getElementById('avg-yield').innerText = `${avgApy.toFixed(2)}%`;
+  }
+
+  // Render compliance credentials
+  if (state.compliance && state.compliance['user_wallet']) {
+    const comp = state.compliance['user_wallet'];
+    const badge = document.getElementById('compliance-badge');
+    const proofText = document.getElementById('compliance-proof-hash');
+    
+    if (comp.status === 'VERIFIED') {
+      badge.innerText = 'VERIFIED';
+      badge.style.background = 'rgba(0, 255, 102, 0.1)';
+      badge.style.color = 'var(--neon-green)';
+      badge.style.borderColor = 'var(--neon-green)';
+      proofText.innerText = comp.proofHash || 'Verified Proof Hash';
+    } else if (comp.status === 'REVOKED') {
+      badge.innerText = 'REVOKED';
+      badge.style.background = 'rgba(255, 0, 127, 0.1)';
+      badge.style.color = 'var(--neon-pink)';
+      badge.style.borderColor = 'var(--neon-pink)';
+      proofText.innerText = 'ZK proof cleared';
+    } else {
+      badge.innerText = 'UNVERIFIED';
+      badge.style.background = 'rgba(255, 255, 255, 0.05)';
+      badge.style.color = 'var(--text-muted)';
+      badge.style.borderColor = 'var(--border-color)';
+      proofText.innerText = 'No ZK proof on-chain';
+    }
+  }
 
   // 2. User Wallet Info
   const userWallet = ledger.accounts['user_wallet'];
@@ -530,13 +566,68 @@ function connectWebSocket() {
       displayedLogsSet.add(logKey);
       appendConsoleLog(msg.data);
       triggerSwarmParticleEffect(msg.data);
-    } else if (msg.type === 'LAYOUT_UPDATE') {
-      // Deployed a new token, reload coordinates
+    } else if (msg.type === 'LAYOUT_UPDATE' || msg.type === 'COMPLIANCE_UPDATE') {
       fetch('/api/state')
         .then(res => res.json())
         .then(state => updateUI(state));
+    } else if (msg.type === 'AGENT_COLLABORATION_STEP') {
+      const timelineDiv = document.getElementById('collaboration-timeline');
+      const stepsDiv = document.getElementById('timeline-steps');
+      timelineDiv.style.display = 'block';
+      stepsDiv.innerHTML = '';
+      
+      msg.data.timeline.forEach((step, idx) => {
+        const statusColor = step.status === 'completed' ? 'var(--neon-green)' : step.status === 'failed' ? 'var(--neon-pink)' : 'var(--neon-orange)';
+        const statusSymbol = step.status === 'completed' ? '✓' : step.status === 'failed' ? '✗' : '⚙';
+        
+        const stepHtml = `
+          <div style="margin-bottom: 6px; border-left: 2px solid ${statusColor}; padding-left: 8px;">
+            <div style="display:flex; justify-content:space-between;">
+              <span style="color:${statusColor}; font-weight:bold;">[${statusSymbol}] ${step.agent}</span>
+              <span style="color:var(--text-muted); font-size:0.7rem;">Conf: ${(step.confidence * 100).toFixed(0)}%</span>
+            </div>
+            <div style="color:var(--text-main); margin-top:2px;">${step.message}</div>
+            ${step.reasoning ? `<div style="color:var(--text-muted); font-size:0.72rem; font-style:italic;">Reason: ${step.reasoning}</div>` : ''}
+          </div>
+        `;
+        stepsDiv.insertAdjacentHTML('beforeend', stepHtml);
+      });
+      stepsDiv.scrollTop = stepsDiv.scrollHeight;
+    } else if (msg.type === 'AI_CHAT_RESPONSE') {
+      const history = document.getElementById('chat-history');
+      const timelineDiv = document.getElementById('collaboration-timeline');
+      // Hide collaboration timeline after completion
+      setTimeout(() => {
+        timelineDiv.style.display = 'none';
+      }, 5000);
+
+      const messageHtml = `
+        <div class="chat-message assistant" style="padding: 10px; border-radius: 6px; background: rgba(176, 38, 255, 0.08); border-left: 3px solid var(--neon-purple); font-size: 0.88rem; line-height: 1.4; margin-top: 8px;">
+          <strong>Aequitas Swarm Manager:</strong>
+          <div style="margin-top: 4px; font-family: sans-serif;">${parseMarkdown(msg.data.message)}</div>
+        </div>
+      `;
+      history.insertAdjacentHTML('beforeend', messageHtml);
+      history.scrollTop = history.scrollHeight;
+
+      if (msg.data.ledger) {
+        fetch('/api/state')
+          .then(res => res.json())
+          .then(state => updateUI(state));
+      }
     }
   };
+
+  function parseMarkdown(text) {
+    let html = text;
+    html = html.replace(/^### (.*$)/gim, '<h4 style="font-size:0.95rem; font-weight:600; color:var(--neon-blue); margin:12px 0 6px; text-transform:uppercase; letter-spacing:0.5px;">$1</h4>');
+    html = html.replace(/^#### (.*$)/gim, '<h5 style="font-size:0.85rem; font-weight:600; color:var(--text-main); margin:8px 0 4px;">$1</h5>');
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--neon-green)">$1</strong>');
+    html = html.replace(/`(.*?)`/g, '<code style="background:rgba(0,0,0,0.4); padding:2px 4px; border-radius:4px; font-family:var(--font-family-mono); font-size:0.75rem; color:var(--neon-pink)">$1</code>');
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    html = html.replace(/^\* (.*$)/gim, '<div style="padding-left:12px; margin:4px 0; font-size:0.85rem; color:var(--text-main)">• $1</div>');
+    return html;
+  }
 
   socket.onerror = (err) => {
     console.warn('WebSocket error encountered:', err);
@@ -1096,6 +1187,70 @@ canvas.addEventListener('mousemove', (e) => {
   });
   
   canvas.style.cursor = hover ? 'pointer' : 'default';
+});
+
+// Compliance trigger handlers
+document.getElementById('btn-kyc-verify').addEventListener('click', () => {
+  const badge = document.getElementById('compliance-badge');
+  badge.innerText = 'VERIFYING...';
+  badge.style.background = 'rgba(255, 153, 0, 0.1)';
+  badge.style.color = 'var(--neon-orange)';
+  badge.style.borderColor = 'var(--neon-orange)';
+  
+  fetch('/api/compliance/screen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sender: 'user_wallet' })
+  });
+});
+
+document.getElementById('btn-kyc-revoke').addEventListener('click', () => {
+  fetch('/api/compliance/revoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sender: 'user_wallet' })
+  }).then(() => {
+    fetch('/api/state')
+      .then(res => res.json())
+      .then(state => updateUI(state));
+  });
+});
+
+// AI Chat Assistant Submission Handlers
+function submitInvestmentGoal() {
+  const inputEl = document.getElementById('chat-input');
+  const text = inputEl.value.trim();
+  if (text === '') return;
+
+  // Append user bubble to history
+  const history = document.getElementById('chat-history');
+  const userHtml = `
+    <div class="chat-message user" style="padding: 10px; border-radius: 6px; background: rgba(0, 240, 255, 0.08); border-right: 3px solid var(--neon-blue); font-size: 0.88rem; line-height: 1.4; align-self: flex-end; width: 85%; margin-top: 8px; text-align: right; margin-left: auto;">
+      <strong>You (Stated Goal):</strong>
+      <div style="margin-top: 4px;">${text}</div>
+    </div>
+  `;
+  history.insertAdjacentHTML('beforeend', userHtml);
+  history.scrollTop = history.scrollHeight;
+  inputEl.value = '';
+
+  // Show collaboration board immediately
+  document.getElementById('collaboration-timeline').style.display = 'block';
+  document.getElementById('timeline-steps').innerHTML = '<div style="color:var(--neon-orange); font-family:var(--font-family-mono); font-size:0.75rem;">Initializing AI Swarm Consensus...</div>';
+
+  // Post prompt to orchestrator agent
+  fetch('/api/ai/invest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: text, sender: 'user_wallet' })
+  });
+}
+
+document.getElementById('btn-chat-send').addEventListener('click', submitInvestmentGoal);
+document.getElementById('chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    submitInvestmentGoal();
+  }
 });
 
 // Window resize

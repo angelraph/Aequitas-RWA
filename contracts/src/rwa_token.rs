@@ -1,7 +1,7 @@
 use odra::prelude::*;
 use odra::casper_types::U256;
 
-#[odra::module(events = [Transfer, Approval, AssetUpdated])]
+#[odra::module(events = [Transfer, Approval, AssetUpdated, PausedStateChanged])]
 pub struct RwaToken {
     name: Var<String>,
     symbol: Var<String>,
@@ -15,6 +15,9 @@ pub struct RwaToken {
     risk_rating: Var<String>,   // e.g. "A+", "B-", "C"
     yield_rate: Var<u32>,       // Yield rate in basis points (e.g. 850 = 8.5%)
     issuer: Var<Address>,
+    owner: Var<Address>,
+    oracle: Var<Address>,
+    is_paused: Var<bool>,
     is_active: Var<bool>,
 }
 
@@ -39,11 +42,17 @@ pub struct AssetUpdated {
     pub yield_rate: u32,
 }
 
+#[odra::event]
+pub struct PausedStateChanged {
+    pub paused: bool,
+}
+
 #[odra::odra_error]
 pub enum Error {
     InsufficientBalance = 30001,
     InsufficientAllowance = 30002,
     Unauthorized = 30003,
+    ContractPaused = 30004,
 }
 
 #[odra::odra_type]
@@ -78,6 +87,9 @@ impl RwaToken {
         self.risk_rating.set(risk_rating);
         self.yield_rate.set(yield_rate);
         self.issuer.set(caller);
+        self.owner.set(caller);
+        self.oracle.set(caller);
+        self.is_paused.set(false);
         self.is_active.set(true);
 
         self.env().emit_event(Transfer {
@@ -112,6 +124,9 @@ impl RwaToken {
     }
 
     pub fn transfer(&mut self, to: Address, amount: U256) {
+        if self.is_paused.get_or_default() {
+            self.env().revert(Error::ContractPaused);
+        }
         let from = self.env().caller();
         let from_balance = self.balances.get_or_default(&from);
         if from_balance < amount {
@@ -130,12 +145,18 @@ impl RwaToken {
     }
 
     pub fn approve(&mut self, spender: Address, amount: U256) {
+        if self.is_paused.get_or_default() {
+            self.env().revert(Error::ContractPaused);
+        }
         let owner = self.env().caller();
         self.allowances.set(&(owner, spender), amount);
         self.env().emit_event(Approval { owner, spender, amount });
     }
 
     pub fn transfer_from(&mut self, from: Address, to: Address, amount: U256) {
+        if self.is_paused.get_or_default() {
+            self.env().revert(Error::ContractPaused);
+        }
         let spender = self.env().caller();
         let allowance = self.allowances.get_or_default(&(from, spender));
         if allowance < amount {
@@ -159,13 +180,59 @@ impl RwaToken {
         });
     }
 
+    // Role configuration
+    pub fn set_oracle(&mut self, oracle: Address) {
+        let caller = self.env().caller();
+        if caller != self.owner.get().unwrap() {
+            self.env().revert(Error::Unauthorized);
+        }
+        self.oracle.set(oracle);
+    }
+
+    pub fn set_issuer(&mut self, issuer: Address) {
+        let caller = self.env().caller();
+        if caller != self.owner.get().unwrap() {
+            self.env().revert(Error::Unauthorized);
+        }
+        self.issuer.set(issuer);
+    }
+
+    pub fn set_paused(&mut self, paused: bool) {
+        let caller = self.env().caller();
+        if caller != self.owner.get().unwrap() {
+            self.env().revert(Error::Unauthorized);
+        }
+        self.is_paused.set(paused);
+        self.env().emit_event(PausedStateChanged { paused });
+    }
+
+    pub fn get_owner(&self) -> Address {
+        self.owner.get().unwrap()
+    }
+
+    pub fn get_oracle(&self) -> Address {
+        self.oracle.get().unwrap()
+    }
+
+    pub fn get_issuer(&self) -> Address {
+        self.issuer.get().unwrap()
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.is_paused.get_or_default()
+    }
+
     // Agent Entrypoint: Risk pricing updates
     pub fn update_asset_data(&mut self, valuation: U256, risk_rating: String, yield_rate: u32) {
+        if self.is_paused.get_or_default() {
+            self.env().revert(Error::ContractPaused);
+        }
         let caller = self.env().caller();
         let issuer = self.issuer.get().unwrap();
+        let oracle = self.oracle.get().unwrap();
+        let owner = self.owner.get().unwrap();
         
-        // In prototype, only issuer (creator/agent) can update
-        if caller != issuer {
+        if caller != issuer && caller != oracle && caller != owner {
             self.env().revert(Error::Unauthorized);
         }
 

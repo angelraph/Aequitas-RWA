@@ -4,6 +4,8 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import { startRiskEvaluator } from './agents/risk_evaluator.js';
 import { startTreasuryRouter } from './agents/treasury_router.js';
+import { calculateRiskMetrics } from './agents/risk_engine.js';
+import { runOrchestration } from './agents/multi_agent_system.js';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -51,6 +53,9 @@ const LEDGER = {
     'treasury_router_wallet': { balance: '100.00' },
     'cspr_premium_api_vault': { balance: '10.00' },
     'aequitas_vault_contract': { balance: '150000.00' }, // Total deposited TVL
+  },
+  compliance: {
+    'user_wallet': { status: 'VERIFIED', proofHash: '0x3F8E92B1C789F' }
   },
   contracts: {
     'AequitasVault': {
@@ -111,8 +116,6 @@ const LEDGER = {
 // ----------------------------------------------------
 // Premium Off-Chain Asset Data & Economic Shocks Mock
 // ----------------------------------------------------
-// This data source mimics the premium data API provider.
-// The Risk Evaluator Agent must fetch from here.
 const OFF_CHAIN_PREMIUM_SOURCE = {
   'RWA-REAL-101': { valuation: 1200000, riskRating: "A", yieldRate: 720 },
   'RWA-INV-202': { valuation: 450000, riskRating: "B+", yieldRate: 850 },
@@ -177,10 +180,15 @@ app.use(async (req, res, next) => {
 
 // Get full system state (frontend queries this)
 app.get('/api/state', (req, res) => {
+  const vault = LEDGER.contracts.AequitasVault;
+  const risk = calculateRiskMetrics(vault.allocations, parseFloat(vault.totalDeposits), LEDGER.contracts);
   res.json({
     ledger: LEDGER,
     offChain: OFF_CHAIN_PREMIUM_SOURCE,
-    logs: logs.slice(-50)
+    compliance: LEDGER.compliance,
+    risk: risk,
+    logs: logs.slice(-50),
+    agentAutomation
   });
 });
 
@@ -211,6 +219,131 @@ app.post('/api/agent-trigger', (req, res) => {
     return res.status(400).json({ error: "Agent trigger callback not registered" });
   }
   res.json({ success: true });
+});
+
+// Compliance Screen API
+app.post('/api/compliance/screen', (req, res) => {
+  const { sender } = req.body;
+  if (!LEDGER.accounts[sender]) {
+    return res.status(404).json({ error: "Account not found" });
+  }
+
+  const proofHash = "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "789F";
+  LEDGER.compliance[sender] = {
+    status: 'VERIFIED',
+    proofHash
+  };
+
+  const txHash = "tx_kyc_" + Math.random().toString(36).substring(2, 9);
+  const time = new Date().toLocaleTimeString();
+
+  LEDGER.transactions.push({
+    id: txHash,
+    type: "CALL",
+    sender,
+    time,
+    description: `Call AequitasVault.register_compliance_proof(${sender}, ${proofHash})`
+  });
+
+  addLog('Compliance Agent', `Sanctions screen approved for ${sender}. On-chain ZK-proof published. Hash: ${proofHash}`, 'success');
+
+  wss.clients.forEach(client => {
+    if (client.readyState === 1) {
+      client.send(JSON.stringify({ type: 'COMPLIANCE_UPDATE', data: { compliance: LEDGER.compliance } }));
+    }
+  });
+
+  res.json({ success: true, compliance: LEDGER.compliance[sender], txHash });
+});
+
+// Compliance Revoke API
+app.post('/api/compliance/revoke', (req, res) => {
+  const { sender } = req.body;
+  
+  LEDGER.compliance[sender] = {
+    status: 'REVOKED',
+    proofHash: null
+  };
+
+  const txHash = "tx_kyc_revoke_" + Math.random().toString(36).substring(2, 9);
+  const time = new Date().toLocaleTimeString();
+
+  LEDGER.transactions.push({
+    id: txHash,
+    type: "CALL",
+    sender,
+    time,
+    description: `Call AequitasVault.register_compliance_proof(${sender}, 0x0)`
+  });
+
+  addLog('Compliance Agent', `Revoked compliance credential on-chain for ${sender}.`, 'warning');
+
+  wss.clients.forEach(client => {
+    if (client.readyState === 1) {
+      client.send(JSON.stringify({ type: 'COMPLIANCE_UPDATE', data: { compliance: LEDGER.compliance } }));
+    }
+  });
+
+  res.json({ success: true, compliance: LEDGER.compliance[sender], txHash });
+});
+
+// AI Goal Staking Endpoint (Interacts with the Swarm Orchestration timeline)
+app.post('/api/ai/invest', async (req, res) => {
+  const { prompt, sender } = req.body;
+  if (!prompt) {
+    return res.status(400).json({ error: "Missing investment goal prompt" });
+  }
+
+  addLog('System', `AI Goal Initiated: "${prompt}" from ${sender}`, 'info');
+
+  const broadcastState = (msg) => {
+    wss.clients.forEach(client => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify(msg));
+      }
+    });
+  };
+
+  try {
+    const result = await runOrchestration(prompt, 0, LEDGER, OFF_CHAIN_PREMIUM_SOURCE, addLog, broadcastState);
+
+    const vault = LEDGER.contracts.AequitasVault;
+    
+    // Register ZK proof hash locally in the compliance ledger
+    LEDGER.compliance[sender] = {
+      status: 'VERIFIED',
+      proofHash: result.zkProofHash
+    };
+
+    // Update Allocations based on dynamic calculations
+    for (const [assetId, amount] of Object.entries(result.targetAllocations)) {
+      vault.allocations[assetId] = amount.toFixed(2);
+    }
+
+    const txHash = "tx_ai_rebalance_" + Math.random().toString(36).substring(2, 9);
+    const time = new Date().toLocaleTimeString();
+
+    LEDGER.transactions.push({
+      id: txHash,
+      type: "CALL",
+      sender,
+      time,
+      description: `AI Swarm Rebalance: "${prompt}"`
+    });
+
+    broadcastState({
+      type: 'AI_CHAT_RESPONSE',
+      data: {
+        message: result.explanation,
+        ledger: LEDGER
+      }
+    });
+
+    res.json({ success: true, txHash });
+  } catch (error) {
+    console.error("AI Investment failed:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.post('/api/deploy-rwa', (req, res) => {
@@ -288,7 +421,6 @@ app.post('/api/update-offchain', (req, res) => {
   res.json({ success: true, asset });
 });
 
-
 // Trigger macroeconomic events / shocks from frontend
 app.post('/api/trigger-shock', (req, res) => {
   const { assetId, type } = req.body;
@@ -332,6 +464,12 @@ app.post('/api/deposit', (req, res) => {
     return res.status(400).json({ error: "Invalid amount" });
   }
 
+  // Compliance check
+  const comp = LEDGER.compliance[sender] || { status: 'UNVERIFIED' };
+  if (comp.status !== 'VERIFIED') {
+    return res.status(403).json({ error: "Compliance Error: Non-compliant investor. Run KYC screening first." });
+  }
+
   const userWallet = LEDGER.accounts[sender] || { balance: '0.00' };
   const userBalance = parseFloat(userWallet.balance);
   
@@ -367,6 +505,12 @@ app.post('/api/withdraw', (req, res) => {
 
   if (isNaN(numAmount) || numAmount <= 0) {
     return res.status(400).json({ error: "Invalid amount" });
+  }
+
+  // Compliance check
+  const comp = LEDGER.compliance[sender] || { status: 'UNVERIFIED' };
+  if (comp.status !== 'VERIFIED') {
+    return res.status(403).json({ error: "Compliance Error: Non-compliant investor. Run KYC screening first." });
   }
 
   const vault = LEDGER.contracts.AequitasVault;
@@ -410,7 +554,6 @@ app.post('/api/withdraw', (req, res) => {
 // x402 Micropayments Protocol Implementations
 // ----------------------------------------------------
 
-// Endpoint to fetch premium data (implements x402 flow)
 app.get('/api/premium-data', (req, res) => {
   const { assetId } = req.query;
   const authHeader = req.headers['authorization'];
@@ -430,7 +573,6 @@ app.get('/api/premium-data', (req, res) => {
       if (paymentInfo.settled && paymentInfo.txHash === txHash && paymentInfo.assetId === assetId) {
         addLog('x402 Facilitator', `Validation Successful. Proof ${txHash.substring(0, 10)}... settled for reference ${payRef}.`, 'success');
         
-        // Success: Return Premium Asset Data!
         const data = OFF_CHAIN_PREMIUM_SOURCE[assetId];
         return res.json({
           status: 200,
@@ -456,7 +598,6 @@ app.get('/api/premium-data', (req, res) => {
     txHash: null
   });
 
-  // Set the standard x402 headers
   res.setHeader('X-402-Payment-Amount', payAmount);
   res.setHeader('X-402-Destination', 'cspr_premium_api_vault');
   res.setHeader('X-402-Payment-Reference', payRef);
@@ -662,8 +803,20 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-  // Send active state upon connection
-  ws.send(JSON.stringify({ type: 'INIT_STATE', data: { ledger: LEDGER, offChain: OFF_CHAIN_PREMIUM_SOURCE, logs, agentAutomation } }));
+  // calculate current risk metrics for init state
+  const vault = LEDGER.contracts.AequitasVault;
+  const risk = calculateRiskMetrics(vault.allocations, parseFloat(vault.totalDeposits), LEDGER.contracts);
+  ws.send(JSON.stringify({ 
+    type: 'INIT_STATE', 
+    data: { 
+      ledger: LEDGER, 
+      offChain: OFF_CHAIN_PREMIUM_SOURCE, 
+      compliance: LEDGER.compliance,
+      risk,
+      logs, 
+      agentAutomation 
+    } 
+  }));
 });
 
 if (!process.env.VERCEL) {
@@ -684,4 +837,3 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
-

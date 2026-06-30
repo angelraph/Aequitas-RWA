@@ -1,13 +1,14 @@
 pub mod rwa_token;
 pub mod aequitas_vault;
 
-pub use rwa_token::{RwaToken, Transfer, Approval, AssetUpdated};
-pub use aequitas_vault::{AequitasVault, Deposit, Withdraw, CapitalReallocated};
+pub use rwa_token::{RwaToken, Transfer, Approval, AssetUpdated, PausedStateChanged as TokenPausedStateChanged};
+pub use aequitas_vault::{AequitasVault, Deposit, Withdraw, CapitalReallocated, ComplianceProofRegistered, PausedStateChanged as VaultPausedStateChanged};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use odra::host::{Deployer, HostEnv};
+    use odra::host::Deployer;
+    use odra::prelude::*;
     use odra::casper_types::U256;
 
     #[test]
@@ -23,7 +24,7 @@ mod tests {
             risk_rating: "A".to_string(),
             yield_rate: 720,
         };
-        let mut token = rwa_token::RwaTokenHostRef::deploy(&env, token_args);
+        let mut token = RwaToken::deploy(&env, token_args);
 
         assert_eq!(token.name(), "Greenwood Office Park");
         assert_eq!(token.symbol(), "RWA-REAL-101");
@@ -34,12 +35,18 @@ mod tests {
         let vault_args = aequitas_vault::AequitasVaultInitArgs {
             router: router_address,
         };
-        let mut vault = aequitas_vault::AequitasVaultHostRef::deploy(&env, vault_args);
+        let mut vault = AequitasVault::deploy(&env, vault_args);
 
         assert_eq!(vault.get_router(), router_address);
         assert_eq!(vault.get_total_deposits(), U256::zero());
 
-        // Test deposit
+        // Register compliance proof for account 0 (owner is compliance officer)
+        env.set_caller(env.get_account(0));
+        vault.register_compliance_proof(env.get_account(0), U256::from(12345));
+        assert!(vault.is_compliant(env.get_account(0)));
+        assert_eq!(vault.get_compliance_proof_of(env.get_account(0)), U256::from(12345));
+
+        // Test deposit with compliant investor
         env.set_caller(env.get_account(0));
         vault.deposit(U256::from(50_000));
         assert_eq!(vault.get_balance_of(env.get_account(0)), U256::from(50_000));
@@ -57,5 +64,14 @@ mod tests {
         assert_eq!(metadata.valuation, U256::from(1_300_000));
         assert_eq!(metadata.risk_rating, "A+");
         assert_eq!(metadata.yield_rate, 700);
+
+        // Test emergency paused status
+        env.set_caller(env.get_account(0));
+        vault.set_paused(true);
+        assert!(vault.is_paused());
+
+        // Vault unpausing
+        vault.set_paused(false);
+        assert!(!vault.is_paused());
     }
 }
