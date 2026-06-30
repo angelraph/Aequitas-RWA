@@ -792,6 +792,117 @@ app.get('/api/casper/status', async (req, res) => {
   }
 });
 
+// RPC Broadcast endpoint for signed Casper deploys
+app.post('/api/casper/broadcast', async (req, res) => {
+  const { signedDeploy } = req.body;
+  if (!signedDeploy) {
+    return res.status(400).json({ error: "Missing signed deploy payload" });
+  }
+
+  try {
+    const rpcRes = await fetch('https://node.testnet.casper.network/rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'account_put_deploy',
+        params: signedDeploy,
+        id: 1
+      })
+    });
+
+    const rpcData = await rpcRes.json();
+    if (rpcData.error) {
+      return res.status(400).json({ error: rpcData.error.message });
+    }
+
+    const deployHash = rpcData.result.deploy_hash;
+    addLog('Casper Network', `Deploy broadcasted successfully. Deploy Hash: ${deployHash}`, 'success');
+    res.json({ success: true, deployHash });
+  } catch (err) {
+    console.error("RPC broadcast failed:", err);
+    res.status(500).json({ error: "Failed to broadcast transaction to Casper Testnet: " + err.message });
+  }
+});
+
+// GET deploy status polling endpoint
+app.get('/api/casper/deploy-status', async (req, res) => {
+  const { hash } = req.query;
+  if (!hash) {
+    return res.status(400).json({ error: "Missing deploy hash" });
+  }
+
+  try {
+    const rpcRes = await fetch('https://node.testnet.casper.network/rpc', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'info_get_deploy',
+        params: { deploy_hash: hash },
+        id: 1
+      })
+    });
+
+    const rpcData = await rpcRes.json();
+    if (rpcData.error) {
+      return res.json({ confirmed: false, error: rpcData.error.message });
+    }
+
+    const executionResults = rpcData.result.execution_results || [];
+    const confirmed = executionResults.length > 0;
+    const success = confirmed && !executionResults[0].result.Failure;
+
+    res.json({
+      confirmed,
+      success,
+      deploy: rpcData.result.deploy
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Build deploy mock template for Signer signing
+app.post('/api/casper/build-deploy', (req, res) => {
+  const { entrypoint, sender, args } = req.body;
+  if (!sender) {
+    return res.status(400).json({ error: "Missing sender public key" });
+  }
+
+  const deploy = {
+    hash: "d_" + Math.random().toString(36).substring(2, 10),
+    header: {
+      account: sender,
+      timestamp: Date.now(),
+      ttl: "30m",
+      gas_price: 1,
+      body_hash: "b_" + Math.random().toString(36).substring(2, 10),
+      dependencies: [],
+      chain_name: "casper-testnet"
+    },
+    payment: {
+      ModuleBytes: {
+        args: [
+          ["amount", { cl_type: "U512", bytes: "0400e87a48", parsed: "150000000" }]
+        ]
+      }
+    },
+    session: {
+      StoredContractByHash: {
+        hash: "0a12e340c21342621743f5509ba09d01a5511b816ba7b778c1ef1d0d9cf1d4f2", // Casper Testnet Vault contract hash
+        entry_point: entrypoint,
+        args: args || []
+      }
+    },
+    approvals: []
+  };
+
+  res.json({ deploy });
+});
+
+
+
 // ----------------------------------------------------
 // Setup Server Listen & WebSocket Upgrade
 // ----------------------------------------------------

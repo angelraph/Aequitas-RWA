@@ -586,11 +586,62 @@ function setStakingAction(action) {
 // ----------------------------------------------------
 // Onboarding Stepper Actions
 // ----------------------------------------------------
+function getCasperProvider() {
+  if (typeof window.CasperWalletProvider !== 'undefined') {
+    return window.CasperWalletProvider();
+  }
+  if (typeof window.casperlabsHelper !== 'undefined') {
+    return window.casperlabsHelper;
+  }
+  return null;
+}
+
+async function connectCasperWallet() {
+  const provider = getCasperProvider();
+  const guide = document.getElementById('wallet-not-detected-guide');
+  
+  if (!provider) {
+    guide.style.display = 'block';
+    return;
+  }
+  
+  try {
+    if (typeof window.CasperWalletProvider !== 'undefined') {
+      const walletProvider = window.CasperWalletProvider();
+      await walletProvider.requestConnection();
+      casperWalletAddress = await walletProvider.getActivePublicKey();
+    } else {
+      await window.casperlabsHelper.requestConnection();
+      casperWalletAddress = await window.casperlabsHelper.getActivePublicKey();
+    }
+    
+    walletMode = 'casper';
+    guide.style.display = 'none';
+    
+    // Update pill and advance
+    document.getElementById('wallet-pill').innerText = `🔌 CONNECTED: ${casperWalletAddress.substring(0, 12)}...`;
+    nextOnboardingStep(5);
+  } catch (err) {
+    alert("Connection rejected: " + err.message);
+  }
+}
+
 function nextOnboardingStep(step) {
   // Update progress bar
   const bar = document.getElementById('onboarding-bar');
   const percentage = (step / 8) * 100;
   bar.style.width = `${percentage}%`;
+
+  // Check if wallet step is being shown
+  if (step === 4) {
+    const provider = getCasperProvider();
+    const guide = document.getElementById('wallet-not-detected-guide');
+    if (!provider) {
+      guide.style.display = 'block';
+    } else {
+      guide.style.display = 'none';
+    }
+  }
 
   // Hide active step
   document.querySelectorAll('.onboarding-step').forEach(el => {
@@ -608,20 +659,47 @@ function useDemoWalletMode() {
   nextOnboardingStep(5);
 }
 
-function runOnboardKYC() {
+async function runOnboardKYC() {
+  const provider = getCasperProvider();
+  
+  if (walletMode === 'casper' && !provider) {
+    alert("Casper Wallet connection required to proceed.");
+    return;
+  }
+
   document.getElementById('btn-onboard-kyc').style.display = 'none';
   document.getElementById('compliance-loader-onboard').style.display = 'block';
 
-  fetch('/api/compliance/screen', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sender: casperWalletAddress })
-  }).then(async (res) => {
-    const data = await res.json();
+  // Sign ZK compliance consent message
+  const message = `Aequitas RWA KYC Verification: Consent to publish ZK compliance proof for wallet ${casperWalletAddress}`;
+  try {
+    let signature = "simulated_zk_sig";
+    if (walletMode === 'casper') {
+      if (typeof window.CasperWalletProvider !== 'undefined') {
+        const walletProvider = window.CasperWalletProvider();
+        const signed = await walletProvider.signMessage(message, casperWalletAddress);
+        signature = signed.signature;
+      } else {
+        signature = await window.casperlabsHelper.signMessage(message, casperWalletAddress);
+      }
+    }
+
+    // Submit signature to compliance screen API
+    const res = await fetch('/api/compliance/screen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender: casperWalletAddress, signature, message })
+    });
+    
+    await res.json();
     setTimeout(() => {
       nextOnboardingStep(6);
-    }, 1800);
-  });
+    }, 1200);
+  } catch (err) {
+    alert("Signature verification failed: " + err.message);
+    document.getElementById('btn-onboard-kyc').style.display = 'block';
+    document.getElementById('compliance-loader-onboard').style.display = 'none';
+  }
 }
 
 function selectStrategy(strategy) {
@@ -684,76 +762,157 @@ async function executeStakingTransaction() {
     return;
   }
 
+  const provider = getCasperProvider();
   const modal = document.getElementById('tx-modal');
   const title = document.getElementById('tx-modal-title');
   const desc = document.getElementById('tx-modal-desc');
   const actionBox = document.getElementById('tx-modal-action-box');
   
   modal.style.display = 'flex';
-  
-  // Step 1: Prepare transaction
-  title.innerText = "Preparing Transaction";
-  desc.innerText = `Structuring contract call AequitasVault.${currentAction}(${amount} CSPR)...`;
-  await new Promise(r => setTimeout(r, 1200));
+  actionBox.style.display = 'none';
 
-  // Step 2: Request Wallet Signature
-  title.innerText = "Waiting for Wallet Approval";
-  desc.innerText = "Open your Casper Signer or Casper Wallet extension window and authorize the transaction fee.";
-  
-  if (walletMode === 'casper' && typeof window.casperlabsHelper !== 'undefined') {
-    // Real wallet integration trigger
-    try {
-      const activeKey = await window.casperlabsHelper.getActivePublicKey();
-      // Construct casper deploys and sign via extension helper
-      // e.g. await window.casperlabsHelper.sign(deployJson, activeKey);
-    } catch (e) {
-      console.warn("Wallet extension cancelled or errored:", e);
-      title.innerText = "Transaction Rejected";
-      desc.innerText = "You rejected the transaction in your Casper wallet helper. Please try again.";
-      actionBox.style.display = 'block';
-      return;
-    }
-  } else {
-    // Graceful Sandbox simulation so first-time judges aren't blocked
-    await new Promise(r => setTimeout(r, 1500));
+  if (walletMode === 'casper' && !provider) {
+    title.innerText = "Casper Wallet Required";
+    desc.innerHTML = `
+      <div style="text-align:left; font-size:0.85rem;">
+        <p style="color:var(--brand-pink); font-weight:bold; margin-bottom:8px;">No Casper wallet extension was detected.</p>
+        <p style="color:var(--text-secondary); margin-bottom:8px;">To complete staking transactions, please install one of the supported Casper extensions:</p>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <a href="https://cspr.live/wallet" target="_blank" style="color:var(--brand-blue); text-decoration:underline;">📥 Download Casper Wallet</a>
+          <a href="https://chrome.google.com/webstore/detail/casper-signer/jojikgnjmodnccaanggboacoeallhpba" target="_blank" style="color:var(--brand-blue); text-decoration:underline;">📥 Download Casper Signer</a>
+        </div>
+      </div>
+    `;
+    actionBox.style.display = 'block';
+    return;
   }
 
-  // Step 3: Broadcasting
-  title.innerText = "Broadcasting to Casper Network";
-  desc.innerText = "Submitting signed contract transaction to Testnet nodes...";
-  
-  let url = `/api/${currentAction}`;
-  let response;
   try {
-    response = await fetch(url, {
+    // Step 1: Build deploy template from server
+    title.innerText = "Structuring Deploy";
+    desc.innerText = `Requesting transaction payload structure for AequitasVault.${currentAction}(${amount} CSPR)...`;
+    
+    const buildRes = await fetch('/api/casper/build-deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sender: casperWalletAddress, amount })
+      body: JSON.stringify({
+        entrypoint: currentAction === 'deposit' ? 'deposit' : 'withdraw',
+        sender: casperWalletAddress,
+        args: [
+          ["amount", { cl_type: "U512", parsed: (amount * 1000000000).toString() }] // CSPR has 9 decimals
+        ]
+      })
     });
+
+    if (!buildRes.ok) {
+      const err = await buildRes.json();
+      throw new Error(err.error || "Failed to structure transaction payload");
+    }
+
+    const { deploy } = await buildRes.json();
+
+    // Step 2: Prompt Wallet Signer Approval
+    title.innerText = "Awaiting Wallet Signature";
+    desc.innerText = "Please review and approve the transaction in your Casper wallet extension popup.";
+
+    let signedDeploy;
+    if (walletMode === 'casper') {
+      if (typeof window.CasperWalletProvider !== 'undefined') {
+        const walletProvider = window.CasperWalletProvider();
+        const signed = await walletProvider.sign(JSON.stringify(deploy), casperWalletAddress);
+        if (signed.cancelled) {
+          throw new Error("Transaction signature cancelled by user.");
+        }
+        signedDeploy = JSON.parse(signed.deploy);
+      } else {
+        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deploy), casperWalletAddress);
+        signedDeploy = JSON.parse(signedJson);
+      }
+    } else {
+      // Sandbox Demo simulation: simulated sign
+      await new Promise(r => setTimeout(r, 1200));
+      signedDeploy = deploy;
+    }
+
+    // Step 3: Broadcast to Testnet Node
+    title.innerText = "Broadcasting Deploy";
+    desc.innerText = "Submitting signed transaction to Casper Testnet node RPC interface...";
+
+    const broadcastRes = await fetch(walletMode === 'casper' ? '/api/casper/broadcast' : `/api/${currentAction}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(walletMode === 'casper' ? { signedDeploy } : { sender: casperWalletAddress, amount })
+    });
+
+    if (!broadcastRes.ok) {
+      const err = await broadcastRes.json();
+      throw new Error(err.error || "Transaction broadcast failed.");
+    }
+
+    const resData = await broadcastRes.json();
+    const deployHash = walletMode === 'casper' ? resData.deployHash : resData.txHash;
+
+    // Step 4: Await block confirmation on Casper Testnet
+    title.innerText = "Waiting for Block Confirmation";
+    desc.innerHTML = `
+      <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+      <p style="color:var(--text-secondary); margin-bottom:12px;">Querying Casper Testnet RPC node (info_get_deploy)...</p>
+      <a href="https://testnet.cspr.live/deploy/${deployHash}" target="_blank" class="btn-action-secondary" style="padding:6px 12px; font-size:0.8rem; display:inline-block; width:auto;">
+        🔍 View on CSPR.live Testnet Explorer
+      </a>
+    `;
+
+    // Polling logic
+    let confirmed = false;
+    let attempts = 0;
+    while (!confirmed && attempts < 20) {
+      await new Promise(r => setTimeout(r, 4000));
+      attempts++;
+      
+      const pollRes = await fetch(walletMode === 'casper' ? `/api/casper/deploy-status?hash=${deployHash}` : '/api/state');
+      if (pollRes.ok) {
+        if (walletMode === 'casper') {
+          const pollData = await pollRes.json();
+          if (pollData.confirmed) {
+            confirmed = true;
+            if (pollData.success) {
+              title.innerText = "Staking Complete";
+              desc.innerHTML = `
+                <p style="color:var(--brand-green); font-weight:bold; margin-bottom:8px;">Transaction confirmed successfully!</p>
+                <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+                <a href="https://testnet.cspr.live/deploy/${deployHash}" target="_blank" class="btn-action-secondary" style="padding:6px 12px; font-size:0.8rem; display:inline-block; width:auto; margin-bottom:8px;">
+                  🔍 View Execution on CSPR.live
+                </a>
+              `;
+            } else {
+              throw new Error("Transaction execution failed inside contract logic.");
+            }
+          }
+        } else {
+          // Sandbox is instant confirmation
+          confirmed = true;
+          title.innerText = "Staking Complete";
+          desc.innerHTML = `
+            <p style="color:var(--brand-green); font-weight:bold; margin-bottom:8px;">Transaction confirmed successfully!</p>
+            <p style="margin-bottom:8px;">Sim Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+          `;
+        }
+      }
+    }
+
+    if (!confirmed) {
+      throw new Error("Transaction verification timed out. Please check CSPR.live later.");
+    }
+
   } catch (err) {
-    title.innerText = "Broadcasting Error";
-    desc.innerText = `Network communication error: ${err.message}`;
-    actionBox.style.display = 'block';
-    return;
+    console.error(err);
+    title.innerText = "Transaction Error";
+    desc.innerHTML = `<span style="color:var(--brand-pink); font-size:0.9rem;">${err.message}</span>`;
   }
 
-  if (!response.ok) {
-    const errData = await response.json();
-    title.innerText = "Staking Transaction Failed";
-    desc.innerText = errData.error || "Blockchain transaction failed to settle.";
-    actionBox.style.display = 'block';
-    return;
-  }
-
-  const result = await response.json();
-  await new Promise(r => setTimeout(r, 1000));
-
-  // Step 4: Confirmed!
-  title.innerText = "Transaction Settled";
-  desc.innerText = `Successfully confirmed! Transfer settled on block. Wallet balance updated.`;
   actionBox.style.display = 'block';
 
-  // Trigger UI state updates
+  // Trigger state updates
   fetch('/api/state')
     .then(r => r.json())
     .then(state => updateUI(state));
