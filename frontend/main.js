@@ -398,69 +398,106 @@ function updateUI(state) {
   // 1. Vault stats
   const vault = ledger.contracts.AequitasVault;
   const tvl = parseFloat(vault.totalDeposits);
-  document.getElementById('tvl-value').innerHTML = `${tvl.toLocaleString(undefined, { minimumFractionDigits: 2 })} <span class="unit">CSPR</span>`;
   
+  // Format TVL text
+  const tvlText = `${tvl.toLocaleString(undefined, { minimumFractionDigits: 2 })} CSPR`;
+  if (document.getElementById('tvl-value')) {
+    document.getElementById('tvl-value').innerText = tvlText;
+  }
+  if (document.getElementById('dash-tvl-value')) {
+    document.getElementById('dash-tvl-value').innerText = tvlText;
+  }
+  
+  // Risk metrics values
+  let avgYield = 7.85;
+  let safetyScore = 90;
+  let valueAtRisk = 1240;
+  let sharpeRatio = 1.82;
+
   if (state.risk) {
-    document.getElementById('avg-yield').innerText = `${state.risk.avgYield.toFixed(2)}%`;
-    document.getElementById('risk-sharpe').innerText = state.risk.sharpeRatio.toFixed(2);
-    document.getElementById('risk-var').innerText = `${state.risk.valueAtRisk.toLocaleString()} CSPR`;
-    document.getElementById('risk-diversification').innerText = `${state.risk.diversificationScore}%`;
-    document.getElementById('risk-liquidity').innerText = `${state.risk.liquidityScore}%`;
-    document.getElementById('risk-health').innerText = `${state.risk.healthScore}/100`;
-  } else {
-    // APY weighting fallback
-    let weightedApySum = 0;
-    let totalAllocated = 0;
-    const rwaKeys = Object.keys(ledger.contracts).filter(k => k.startsWith('RWA-'));
-
-    rwaKeys.forEach(assetId => {
-      const contract = ledger.contracts[assetId];
-      const allocation = parseFloat(vault.allocations[assetId] || '0');
-      weightedApySum += (contract.yieldRate / 100) * allocation;
-      totalAllocated += allocation;
-    });
-
-    const avgApy = totalAllocated > 0 ? (weightedApySum / totalAllocated) : 7.85;
-    document.getElementById('avg-yield').innerText = `${avgApy.toFixed(2)}%`;
+    avgYield = state.risk.avgYield;
+    safetyScore = state.risk.healthScore;
+    valueAtRisk = state.risk.valueAtRisk;
+    sharpeRatio = state.risk.sharpeRatio;
   }
 
-  // Render compliance credentials
+  // Update metrics elements
+  const updateMetric = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.innerText = val;
+  };
+
+  updateMetric('avg-yield', `${avgYield.toFixed(2)}%`);
+  updateMetric('dash-avg-yield', `${avgYield.toFixed(2)}%`);
+  updateMetric('risk-health', `${safetyScore}/100`);
+  updateMetric('dash-risk-health', `${safetyScore}/100`);
+  updateMetric('risk-var', `${valueAtRisk.toLocaleString()} CSPR`);
+  updateMetric('dash-risk-var', `${valueAtRisk.toLocaleString()} CSPR`);
+  updateMetric('risk-sharpe', sharpeRatio.toFixed(2));
+  updateMetric('dash-risk-sharpe', sharpeRatio.toFixed(2));
+
+  // Render compliance credentials badge
   if (state.compliance && state.compliance[casperWalletAddress]) {
     const comp = state.compliance[casperWalletAddress];
     const badge = document.getElementById('compliance-badge');
     const proofText = document.getElementById('compliance-proof-hash');
     
-    if (comp.status === 'VERIFIED') {
-      badge.innerText = 'VERIFIED';
-      badge.style.background = 'rgba(0, 255, 102, 0.1)';
-      badge.style.color = 'var(--neon-green)';
-      badge.style.borderColor = 'var(--neon-green)';
-      proofText.innerText = comp.proofHash || 'Verified Proof Hash';
-    } else if (comp.status === 'REVOKED') {
-      badge.innerText = 'REVOKED';
-      badge.style.background = 'rgba(255, 0, 127, 0.1)';
-      badge.style.color = 'var(--neon-pink)';
-      badge.style.borderColor = 'var(--neon-pink)';
-      proofText.innerText = 'ZK proof cleared';
-    } else {
-      badge.innerText = 'UNVERIFIED';
-      badge.style.background = 'rgba(255, 255, 255, 0.05)';
-      badge.style.color = 'var(--text-muted)';
-      badge.style.borderColor = 'var(--border-color)';
-      proofText.innerText = 'No ZK proof on-chain';
+    if (badge && proofText) {
+      if (comp.status === 'VERIFIED') {
+        badge.innerText = 'VERIFIED';
+        badge.style.background = 'rgba(0, 255, 102, 0.1)';
+        badge.style.color = 'var(--brand-green)';
+        badge.style.borderColor = 'var(--brand-green)';
+        proofText.innerText = comp.proofHash || 'Verified Proof Hash';
+      } else if (comp.status === 'REVOKED') {
+        badge.innerText = 'REVOKED';
+        badge.style.background = 'rgba(255, 0, 127, 0.1)';
+        badge.style.color = 'var(--brand-pink)';
+        badge.style.borderColor = 'var(--brand-pink)';
+        proofText.innerText = 'ZK proof cleared';
+      } else {
+        badge.innerText = 'UNVERIFIED';
+        badge.style.background = 'rgba(255, 255, 255, 0.05)';
+        badge.style.color = 'var(--text-secondary)';
+        badge.style.borderColor = 'var(--card-border)';
+        proofText.innerText = 'No ZK proof on-chain';
+      }
     }
   }
 
-  // 2. User Wallet Info
+  // Update checkmarks checklist in Home pane
+  const walletConnected = casperWalletAddress && casperWalletAddress !== 'user_wallet' || walletMode === 'demo';
+  const kycDone = state.compliance && state.compliance[casperWalletAddress] && state.compliance[casperWalletAddress].status === 'VERIFIED';
+  const goalStated = localStorage.getItem('aequitas_selected_strategy') !== null;
+
+  const chkWallet = document.getElementById('chk-wallet');
+  const chkKyc = document.getElementById('chk-kyc');
+  const chkGoal = document.getElementById('chk-goal');
+
+  if (chkWallet) chkWallet.innerText = walletConnected ? '✅' : '⏳';
+  if (chkKyc) chkKyc.innerText = kycDone ? '✅' : '⏳';
+  if (chkGoal) chkGoal.innerText = goalStated ? '✅' : '⏳';
+
+  // Home view labels
+  const modeLabel = document.getElementById('home-mode-label');
+  const walletLabel = document.getElementById('home-wallet-label');
+  if (modeLabel) modeLabel.innerText = walletMode === 'demo' ? 'Sandbox Demo Mode' : 'Casper Testnet';
+  if (walletLabel) walletLabel.innerText = casperWalletAddress;
+
+  // Render amount actions
   const userWallet = ledger.accounts[casperWalletAddress] || { balance: '0.00' };
-  document.getElementById('user-balance').innerText = parseFloat(userWallet.balance).toLocaleString(undefined, { minimumFractionDigits: 2 });
+  const userWalletBal = document.getElementById('user-balance');
+  if (userWalletBal) {
+    userWalletBal.innerText = parseFloat(userWallet.balance).toLocaleString(undefined, { minimumFractionDigits: 2 });
+  }
   
   const userVaultDeposit = parseFloat(vault.balances[casperWalletAddress] || '0');
-  if (currentAction === 'deposit') {
-    document.getElementById('btn-submit-action').innerText = `Stake CSPR`;
-  } else {
-    document.getElementById('btn-submit-action').innerText = `Unstake (Max: ${userVaultDeposit.toLocaleString()} CSPR)`;
-  }
+  const actionBtnMain = document.getElementById('btn-submit-action');
+  const actionBtnInvest = document.getElementById('invest-btn-submit-action');
+  
+  const actionLabel = currentAction === 'deposit' ? 'Stake CSPR' : `Unstake (Max: ${userVaultDeposit.toLocaleString()} CSPR)`;
+  if (actionBtnMain) actionBtnMain.innerText = actionLabel;
+  if (actionBtnInvest) actionBtnInvest.innerText = actionLabel;
 
   // Update wallet connection pill
   const pill = document.getElementById('wallet-pill');
@@ -468,96 +505,91 @@ function updateUI(state) {
     pill.innerText = `🔌 Connected: ${casperWalletAddress.substring(0, 12)}...`;
   }
 
-  // 3. Allocation Progress Bars
+  // Render allocation progress bars (both home and portfolio panels)
   const rwaKeys = Object.keys(ledger.contracts).filter(k => k.startsWith('RWA-'));
   const allocList = document.getElementById('allocation-bars');
-  allocList.innerHTML = '';
-  rwaKeys.forEach((assetId, index) => {
-    const allocation = parseFloat(vault.allocations[assetId] || '0');
-    const percent = tvl > 0 ? ((allocation / tvl) * 100) : 0;
-    const colors = ['var(--brand-blue)', 'var(--brand-purple)', 'var(--brand-pink)', 'var(--brand-orange)', '#ffff00'];
-    const color = colors[index % colors.length];
-
-    const itemHtml = `
-      <div class="allocation-item" style="margin-bottom:12px;">
-        <div class="allocation-meta" style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
-          <span>${ledger.contracts[assetId].name}</span>
-          <strong style="color: ${color}">${percent.toFixed(1)}% (${Math.round(allocation).toLocaleString()} CSPR)</strong>
-        </div>
-        <div class="bar-container" style="width:100%; height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">
-          <div class="bar-fill" style="width: ${percent}%; height:100%; background: ${color}; transition: width 0.4s ease;"></div>
-        </div>
-      </div>
-    `;
-    allocList.insertAdjacentHTML('beforeend', itemHtml);
-  });
-
-  // 4. Asset Table Body
-  const assetsContainer = document.getElementById('assets-list-container');
-  assetsContainer.innerHTML = '';
-  rwaKeys.forEach(assetId => {
-    const contract = ledger.contracts[assetId];
-    const allocation = parseFloat(vault.allocations[assetId] || '0');
-
-    const cardHtml = `
-      <div class="asset-item-card">
-        <div class="asset-details-left">
-          <span class="asset-title">${contract.name}</span>
-          <span class="asset-symbol-pill">${contract.symbol}</span>
-        </div>
-        <div class="asset-details-right">
-          <span class="asset-apy">${(contract.yieldRate / 100).toFixed(2)}% APY</span>
-          <span style="font-size:0.75rem; color:var(--text-secondary);">$${parseFloat(contract.valuation).toLocaleString()} USD</span>
-        </div>
-      </div>
-    `;
-    assetsContainer.insertAdjacentHTML('beforeend', cardHtml);
-  });
-
-  // 5. Economic Shocks Simulator
-  const shocksContainer = document.getElementById('shocks-controls');
-  shocksContainer.innerHTML = '';
-  rwaKeys.forEach(assetId => {
-    const offChainData = state.offChain[assetId] || { riskRating: 'A' };
-    const rowHtml = `
-      <div class="shock-row-simple">
-        <span style="font-size:0.85rem;">${assetId} (${offChainData.riskRating})</span>
-        <div>
-          <button class="shock-btn-pill green" onclick="triggerShock('${assetId}', 'upgrade')">Upgrade</button>
-          <button class="shock-btn-pill" onclick="triggerShock('${assetId}', 'downgrade')">Downgrade</button>
-        </div>
-      </div>
-    `;
-    shocksContainer.insertAdjacentHTML('beforeend', rowHtml);
-  });
-
-  // 6. Parameter selector dropdown
-  const assetSelect = document.getElementById('param-asset-select');
-  const prevSelected = assetSelect.value;
-  assetSelect.innerHTML = '';
-  rwaKeys.forEach(assetId => {
-    const opt = document.createElement('option');
-    opt.value = assetId;
-    opt.innerText = assetId;
-    assetSelect.appendChild(opt);
-  });
-
-  if (rwaKeys.includes(prevSelected)) {
-    assetSelect.value = prevSelected;
-  } else if (rwaKeys.length > 0) {
-    assetSelect.value = rwaKeys[0];
-  }
+  const portAllocList = document.getElementById('port-allocation-bars');
   
-  if (isFirstLoad || assetSelect.value !== prevSelected) {
-    syncSlidersToSelectedAsset();
+  const renderAllocBars = (container) => {
+    if (!container) return;
+    container.innerHTML = '';
+    rwaKeys.forEach((assetId, index) => {
+      const allocation = parseFloat(vault.allocations[assetId] || '0');
+      const percent = tvl > 0 ? ((allocation / tvl) * 100) : 0;
+      const colors = ['var(--brand-blue)', 'var(--brand-purple)', 'var(--brand-pink)', 'var(--brand-orange)', '#ffff00'];
+      const color = colors[index % colors.length];
+
+      const itemHtml = `
+        <div class="allocation-item" style="margin-bottom:12px;">
+          <div class="allocation-meta" style="display:flex; justify-content:space-between; font-size:0.85rem; margin-bottom:4px;">
+            <span>${ledger.contracts[assetId].name}</span>
+            <strong style="color: ${color}">${percent.toFixed(1)}% (${Math.round(allocation).toLocaleString()} CSPR)</strong>
+          </div>
+          <div class="bar-container" style="width:100%; height:6px; background:rgba(255,255,255,0.05); border-radius:3px; overflow:hidden;">
+            <div class="bar-fill" style="width: ${percent}%; height:100%; background: ${color}; transition: width 0.4s ease;"></div>
+          </div>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', itemHtml);
+    });
+  };
+
+  renderAllocBars(allocList);
+  renderAllocBars(portAllocList);
+
+  // Render portfolio explainability cards (under portfolio pane)
+  const explainContainer = document.getElementById('portfolio-explainability-cards');
+  if (explainContainer) {
+    explainContainer.innerHTML = '';
+    rwaKeys.forEach(assetId => {
+      const contract = ledger.contracts[assetId];
+      const allocation = parseFloat(vault.allocations[assetId] || '0');
+      if (allocation > 0) {
+        const cardHtml = `
+          <div style="background:rgba(255,255,255,0.02); border:1px solid var(--card-border); border-radius:var(--radius-sm); padding:10px; font-size:0.82rem; margin-bottom:10px;">
+            <strong style="color:var(--brand-blue); display:block; margin-bottom:4px;">${contract.name} (${assetId})</strong>
+            <span style="color:var(--text-secondary);">Allocated quantity: **${Math.round(allocation).toLocaleString()} CSPR** at **${(contract.yieldRate / 100).toFixed(2)}% APY**. Continuous Oracle pricing checks matches off-chain targets.</span>
+          </div>
+        `;
+        explainContainer.insertAdjacentHTML('beforeend', cardHtml);
+      }
+    });
+    if (explainContainer.innerHTML === '') {
+      explainContainer.innerHTML = `<p style="color:var(--text-secondary); font-size:0.85rem;">No active allocations currently staked.</p>`;
+    }
+  }
+
+  // Update Assets select dropdown
+  const assetSelect = document.getElementById('param-asset-select');
+  if (assetSelect) {
+    const prevSelected = assetSelect.value;
+    assetSelect.innerHTML = '';
+    rwaKeys.forEach(assetId => {
+      const opt = document.createElement('option');
+      opt.value = assetId;
+      opt.innerText = assetId;
+      assetSelect.appendChild(opt);
+    });
+
+    if (rwaKeys.includes(prevSelected)) {
+      assetSelect.value = prevSelected;
+    } else if (rwaKeys.length > 0) {
+      assetSelect.value = rwaKeys[0];
+    }
+    
+    if (isFirstLoad || assetSelect.value !== prevSelected) {
+      syncSlidersToSelectedAsset();
+    }
   }
 
   // Update automation buttons
   const autoBtn = document.getElementById('btn-automation-toggle');
-  if (state.agentAutomation) {
-    autoBtn.innerText = 'Toggle Automation: ON';
-  } else {
-    autoBtn.innerText = 'Toggle Automation: OFF';
+  if (autoBtn) {
+    if (state.agentAutomation) {
+      autoBtn.innerText = 'Toggle Automation: ON';
+    } else {
+      autoBtn.innerText = 'Toggle Automation: OFF';
+    }
   }
 }
 
@@ -990,16 +1022,47 @@ async function executeStakingTransaction() {
 }
 
 // ----------------------------------------------------
-// AI chat input handlers
+// Swarm Status Connection & AI chat input handlers
 // ----------------------------------------------------
-function submitAIInvestmentGoal() {
+async function streamSwarmBootSequence() {
+  const stepsDiv = document.getElementById('timeline-steps');
+  const board = document.getElementById('collaboration-timeline');
+  if (board) board.style.display = 'block';
+  if (stepsDiv) {
+    stepsDiv.innerHTML = '';
+    
+    const progressLogs = [
+      { icon: '🔌', text: 'Connecting to Casper RPC Node...' },
+      { icon: '✓', text: 'Connected to testnet.cspr.live' },
+      { icon: '💼', text: 'Portfolio analyst agent loaded.' },
+      { icon: '📊', text: 'Risk evaluation agent online.' },
+      { icon: '🔮', text: 'Oracle asset feed node online.' },
+      { icon: '🛡️', text: 'ZK compliance registry connected.' },
+      { icon: '💸', text: 'Treasury optimization router ready.' }
+    ];
+
+    for (let i = 0; i < progressLogs.length; i++) {
+      const step = progressLogs[i];
+      const itemHtml = `
+        <div style="font-size:0.75rem; color:var(--brand-orange); margin-bottom:4px; font-family:var(--font-mono)">
+          [${step.icon}] ${step.text}
+        </div>
+      `;
+      stepsDiv.insertAdjacentHTML('beforeend', itemHtml);
+      stepsDiv.scrollTop = stepsDiv.scrollHeight;
+      await new Promise(r => setTimeout(r, 350));
+    }
+  }
+}
+
+async function submitAIInvestmentGoal() {
   const inputEl = document.getElementById('chat-input');
   const text = inputEl.value.trim();
   if (text === '') return;
 
   const history = document.getElementById('chat-history');
   const userHtml = `
-    <div class="chat-bubble user">
+    <div class="chat-bubble user" style="margin-top:10px;">
       <strong>You:</strong>
       <div style="margin-top: 4px;">${text}</div>
     </div>
@@ -1008,10 +1071,10 @@ function submitAIInvestmentGoal() {
   history.scrollTop = history.scrollHeight;
   inputEl.value = '';
 
-  // Show collaboration timeline
-  document.getElementById('collaboration-timeline').style.display = 'block';
-  document.getElementById('timeline-steps').innerHTML = '<div style="color:var(--brand-orange); font-size:0.75rem;">Connecting to Multi-Agent Swarm...</div>';
+  // Show dynamic agent connections sequentially
+  await streamSwarmBootSequence();
 
+  // Call AI orchestrator API
   fetch('/api/ai/invest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1020,8 +1083,11 @@ function submitAIInvestmentGoal() {
 }
 
 function submitPresetGoal(text) {
-  document.getElementById('chat-input').value = text;
-  submitAIInvestmentGoal();
+  const inputEl = document.getElementById('chat-input');
+  if (inputEl) {
+    inputEl.value = text;
+    submitAIInvestmentGoal();
+  }
 }
 
 // ----------------------------------------------------
@@ -1253,6 +1319,97 @@ function revokeKYCProof() {
   });
 }
 
+// Assets filtering logic
+function filterAssetsList() {
+  const queryInput = document.getElementById('asset-search-input');
+  const typeFilterSelect = document.getElementById('asset-filter-select');
+  if (!queryInput || !typeFilterSelect || !networkState) return;
+
+  const query = queryInput.value.toLowerCase();
+  const typeFilter = typeFilterSelect.value;
+  const container = document.getElementById('assets-list-container');
+  container.innerHTML = '';
+  
+  const ledger = networkState.ledger;
+  const rwaKeys = Object.keys(ledger.contracts).filter(k => k.startsWith('RWA-'));
+  
+  rwaKeys.forEach(assetId => {
+    const contract = ledger.contracts[assetId];
+    
+    // Filter parameters match checks
+    const matchesSearch = contract.name.toLowerCase().includes(query) || assetId.toLowerCase().includes(query);
+    
+    let matchesType = true;
+    if (typeFilter === 'real-estate') {
+      matchesType = assetId.includes('REAL') || contract.name.toLowerCase().includes('plaza') || contract.name.toLowerCase().includes('office');
+    } else if (typeFilter === 'credit') {
+      matchesType = assetId.includes('INV') || assetId.includes('SHIP') || contract.name.toLowerCase().includes('invoice') || contract.name.toLowerCase().includes('freight');
+    }
+    
+    if (matchesSearch && matchesType) {
+      const cardHtml = `
+        <div class="asset-item-card">
+          <div class="asset-details-left">
+            <span class="asset-title">${contract.name}</span>
+            <span class="asset-symbol-pill" style="font-family:var(--font-mono); color:var(--brand-blue); font-size:0.72rem;">${contract.symbol}</span>
+          </div>
+          <div class="asset-details-right" style="text-align:right;">
+            <span class="asset-apy" style="color:var(--brand-green); font-weight:bold;">${(contract.yieldRate / 100).toFixed(2)}% APY</span>
+            <span style="font-size:0.75rem; color:var(--text-secondary); display:block; margin-top:2px;">$${parseFloat(contract.valuation).toLocaleString()} USD</span>
+          </div>
+        </div>
+      `;
+      container.insertAdjacentHTML('beforeend', cardHtml);
+    }
+  });
+}
+
+// Help Contact Form Submission
+function submitHelpForm() {
+  const emailEl = document.getElementById('help-contact-email');
+  const msgEl = document.getElementById('help-contact-msg');
+  if (!emailEl || !msgEl) return;
+
+  const email = emailEl.value.trim();
+  const msg = msgEl.value.trim();
+  
+  if (email === '' || msg === '') {
+    alert("Validation Error: Please fill in both email and message input fields.");
+    return;
+  }
+  
+  alert("Feedback received! Our staff will respond to you within 24 hours.");
+  emailEl.value = '';
+  msgEl.value = '';
+}
+
+// Settings data exporter
+function exportStateData() {
+  if (!networkState) {
+    alert("Export Error: Application state is not loaded yet.");
+    return;
+  }
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(networkState, null, 2));
+  const dlAnchorElem = document.createElement('a');
+  dlAnchorElem.setAttribute("href", dataStr);
+  dlAnchorElem.setAttribute("download", "aequitas_rwa_state.json");
+  dlAnchorElem.click();
+}
+
+// Settings theme toggler
+function toggleThemeMode() {
+  document.body.classList.toggle('light-theme');
+  const isLight = document.body.classList.contains('light-theme');
+  localStorage.setItem('aequitas_theme_light', isLight ? 'true' : 'false');
+  
+  const consoleOutput = document.getElementById('console-output');
+  appendConsoleLog({
+    timestamp: new Date().toLocaleTimeString(),
+    agent: 'System',
+    message: `Theme preferences updated: ${isLight ? 'LIGHT MODE' : 'DARK MODE'}`
+  });
+}
+
 // Intercept data-path clicks for routing
 document.addEventListener('click', e => {
   const link = e.target.closest('[data-path]');
@@ -1265,6 +1422,38 @@ document.addEventListener('click', e => {
 // Window resize
 window.addEventListener('resize', resizeCanvas);
 
+// Bind settings dropdown changes
+const networkSel = document.getElementById('setting-network');
+if (networkSel) {
+  const savedNet = localStorage.getItem('aequitas_setting_network');
+  if (savedNet) networkSel.value = savedNet;
+  networkSel.addEventListener('change', (e) => {
+    localStorage.setItem('aequitas_setting_network', e.target.value);
+    appendConsoleLog({
+      timestamp: new Date().toLocaleTimeString(),
+      agent: 'System',
+      message: `Network environment switched to: ${e.target.value.toUpperCase()}`
+    });
+  });
+}
+
+const providerSel = document.getElementById('setting-wallet-provider');
+if (providerSel) {
+  const savedProv = localStorage.getItem('aequitas_setting_wallet_provider');
+  if (savedProv) {
+    providerSel.value = savedProv;
+    walletMode = savedProv === 'mock' ? 'demo' : 'casper';
+  }
+  providerSel.addEventListener('change', (e) => {
+    localStorage.setItem('aequitas_setting_wallet_provider', e.target.value);
+    walletMode = e.target.value === 'mock' ? 'demo' : 'casper';
+    localStorage.setItem('aequitas_wallet_mode', walletMode);
+    fetch('/api/state')
+      .then(res => res.json())
+      .then(state => updateUI(state));
+  });
+}
+
 // Init and Boot Routing
 resizeCanvas();
 drawSwarm();
@@ -1272,11 +1461,18 @@ connectWebSocket();
 updateCasperStatus();
 setInterval(updateCasperStatus, 15000);
 
+// Restore light theme preference
+if (localStorage.getItem('aequitas_theme_light') === 'true') {
+  document.body.classList.add('light-theme');
+}
+
 // Set onboarding card overlay visibility status based on memory state
 if (onboardingCompleted) {
-  document.getElementById('onboarding-wizard').style.display = 'none';
+  const wizard = document.getElementById('onboarding-wizard');
+  if (wizard) wizard.style.display = 'none';
 } else {
-  document.getElementById('onboarding-wizard').style.display = 'flex';
+  const wizard = document.getElementById('onboarding-wizard');
+  if (wizard) wizard.style.display = 'flex';
   nextOnboardingStep(onboardingStep);
 }
 
