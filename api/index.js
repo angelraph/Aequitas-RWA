@@ -863,6 +863,38 @@ app.get('/api/casper/deploy-status', async (req, res) => {
   }
 });
 
+// Helper to serialize U512 to little-endian bytes string for Casper
+function serializeU512(value) {
+  try {
+    const bigIntValue = BigInt(value);
+    let hex = bigIntValue.toString(16);
+    if (hex.length % 2 !== 0) {
+      hex = '0' + hex;
+    }
+    const bytes = [];
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes.push(parseInt(hex.slice(i, i + 2), 16));
+    }
+    bytes.reverse(); // Casper values are little-endian
+    const len = bytes.length;
+    const lenHex = len.toString(16).padStart(2, '0');
+    const bytesHex = bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+    return lenHex + bytesHex;
+  } catch (e) {
+    console.error("U512 serialization failed for value:", value, e);
+    return "0100"; // fallback
+  }
+}
+
+// Helper to generate a valid 64-character hex string representing a hash
+function generateRandomHex32() {
+  let hex = '';
+  for (let i = 0; i < 64; i++) {
+    hex += Math.floor(Math.random() * 16).toString(16);
+  }
+  return hex;
+}
+
 // Build deploy mock template for Signer signing
 app.post('/api/casper/build-deploy', (req, res) => {
   const { entrypoint, sender, args } = req.body;
@@ -870,14 +902,26 @@ app.post('/api/casper/build-deploy', (req, res) => {
     return res.status(400).json({ error: "Missing sender public key" });
   }
 
+  // Process arguments to guarantee cl_type objects are populated with valid bytes strings
+  const processedArgs = (args || []).map(arg => {
+    if (Array.isArray(arg) && arg.length === 2) {
+      const [name, valObj] = arg;
+      if (valObj && valObj.cl_type === 'U512' && !valObj.bytes) {
+        valObj.bytes = serializeU512(valObj.parsed);
+      }
+      return [name, valObj];
+    }
+    return arg;
+  });
+
   const deploy = {
-    hash: "d_" + Math.random().toString(36).substring(2, 10),
+    hash: generateRandomHex32(),
     header: {
       account: sender,
       timestamp: Date.now(),
       ttl: "30m",
       gas_price: 1,
-      body_hash: "b_" + Math.random().toString(36).substring(2, 10),
+      body_hash: generateRandomHex32(),
       dependencies: [],
       chain_name: "casper-testnet"
     },
@@ -892,7 +936,7 @@ app.post('/api/casper/build-deploy', (req, res) => {
       StoredContractByHash: {
         hash: "0a12e340c21342621743f5509ba09d01a5511b816ba7b778c1ef1d0d9cf1d4f2", // Casper Testnet Vault contract hash
         entry_point: entrypoint,
-        args: args || []
+        args: processedArgs
       }
     },
     approvals: []

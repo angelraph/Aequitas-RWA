@@ -7,11 +7,74 @@ let socket = null;
 let logFilter = 'all';
 let selectedNodeId = null;
 
-// Onboarding & Wallet State
-let onboardingStep = 1;
-let walletMode = 'demo'; // 'demo' or 'casper'
-let casperWalletAddress = 'user_wallet';
-let selectedStrategy = 'balanced';
+// Persistent Onboarding & Wallet State (loaded from localStorage)
+let walletMode = localStorage.getItem('aequitas_wallet_mode') || 'demo';
+let casperWalletAddress = localStorage.getItem('aequitas_wallet_address') || 'user_wallet';
+let onboardingStep = parseInt(localStorage.getItem('aequitas_onboarding_step') || '1');
+let selectedStrategy = localStorage.getItem('aequitas_selected_strategy') || 'balanced';
+let onboardingCompleted = localStorage.getItem('aequitas_onboarding_completed') === 'true';
+
+// Client-Side Router mapping
+const routes = {
+  '/': 'home',
+  '/dashboard': 'home',
+  '/portfolio': 'home',
+  '/invest': 'invest',
+  '/ai': 'invest',
+  '/assets': 'assets',
+  '/compliance': 'compliance',
+  '/activity': 'activity',
+  '/settings': 'settings',
+  '/help': 'help'
+};
+
+function navigateTo(path) {
+  history.pushState(null, '', path);
+  handleRoute(path);
+}
+
+function handleRoute(path) {
+  const pane = routes[path] || 'home';
+  
+  // Highlight active sidebar navigation link
+  document.querySelectorAll('.sidebar-links .nav-link').forEach(link => {
+    const linkPath = link.getAttribute('data-path');
+    if (linkPath === path || (linkPath === '/' && (path === '/dashboard' || path === '/portfolio'))) {
+      link.classList.add('active');
+    } else {
+      link.classList.remove('active');
+    }
+  });
+
+  // Highlight active mobile bottom navigation link
+  document.querySelectorAll('.bottom-nav .nav-item').forEach(item => {
+    const itemPath = item.getAttribute('onclick');
+    if (itemPath && itemPath.includes(pane)) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+
+  // Show active tab content pane
+  document.querySelectorAll('.content-pane').forEach(el => {
+    if (el.id === `pane-${pane}`) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+
+  // Update breadcrumb label
+  const breadcrumb = document.getElementById('breadcrumb-current-page');
+  if (breadcrumb) {
+    breadcrumb.innerText = pane.charAt(0).toUpperCase() + pane.slice(1);
+  }
+
+  if (pane === 'assets') {
+    setTimeout(resizeCanvas, 50);
+  }
+}
 
 // Visualizer Canvas Configuration
 const canvas = document.getElementById('swarmCanvas');
@@ -616,6 +679,8 @@ async function connectCasperWallet() {
     }
     
     walletMode = 'casper';
+    localStorage.setItem('aequitas_wallet_mode', 'casper');
+    localStorage.setItem('aequitas_wallet_address', casperWalletAddress);
     guide.style.display = 'none';
     
     // Update pill and advance
@@ -651,11 +716,14 @@ function nextOnboardingStep(step) {
   // Show target step
   document.getElementById(`onboarding-step-${step}`).classList.add('active');
   onboardingStep = step;
+  localStorage.setItem('aequitas_onboarding_step', step.toString());
 }
 
 function useDemoWalletMode() {
   walletMode = 'demo';
   casperWalletAddress = 'user_wallet';
+  localStorage.setItem('aequitas_wallet_mode', 'demo');
+  localStorage.setItem('aequitas_wallet_address', 'user_wallet');
   nextOnboardingStep(5);
 }
 
@@ -704,6 +772,7 @@ async function runOnboardKYC() {
 
 function selectStrategy(strategy) {
   selectedStrategy = strategy;
+  localStorage.setItem('aequitas_selected_strategy', strategy);
   const box = document.getElementById('strategy-recommendation-summary');
   
   let content = '';
@@ -734,6 +803,8 @@ function selectStrategy(strategy) {
 async function confirmOnboardingStaking() {
   // Close onboarding card overlay
   document.getElementById('onboarding-wizard').style.display = 'none';
+  onboardingCompleted = true;
+  localStorage.setItem('aequitas_onboarding_completed', 'true');
   
   // Submit AI investment request to start simulation rebalancing
   const text = `Invest conservatively for ${selectedStrategy} strategy`;
@@ -1153,12 +1224,61 @@ function triggerSwarmParticleEffect(log) {
   }
 }
 
+// Settings & Control Actions
+function resetOnboardingState() {
+  localStorage.removeItem('aequitas_onboarding_completed');
+  localStorage.removeItem('aequitas_onboarding_step');
+  localStorage.removeItem('aequitas_wallet_mode');
+  localStorage.removeItem('aequitas_wallet_address');
+  
+  onboardingCompleted = false;
+  onboardingStep = 1;
+  walletMode = 'demo';
+  casperWalletAddress = 'user_wallet';
+
+  document.getElementById('onboarding-wizard').style.display = 'flex';
+  nextOnboardingStep(1);
+  navigateTo('/');
+}
+
+function revokeKYCProof() {
+  fetch('/api/compliance/revoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sender: casperWalletAddress })
+  }).then(() => {
+    fetch('/api/state')
+      .then(res => res.json())
+      .then(state => updateUI(state));
+  });
+}
+
+// Intercept data-path clicks for routing
+document.addEventListener('click', e => {
+  const link = e.target.closest('[data-path]');
+  if (link) {
+    e.preventDefault();
+    navigateTo(link.getAttribute('data-path'));
+  }
+});
+
 // Window resize
 window.addEventListener('resize', resizeCanvas);
 
-// Init
+// Init and Boot Routing
 resizeCanvas();
 drawSwarm();
 connectWebSocket();
 updateCasperStatus();
 setInterval(updateCasperStatus, 15000);
+
+// Set onboarding card overlay visibility status based on memory state
+if (onboardingCompleted) {
+  document.getElementById('onboarding-wizard').style.display = 'none';
+} else {
+  document.getElementById('onboarding-wizard').style.display = 'flex';
+  nextOnboardingStep(onboardingStep);
+}
+
+// Initialise active view pane from current browser URL routing path
+handleRoute(window.location.pathname);

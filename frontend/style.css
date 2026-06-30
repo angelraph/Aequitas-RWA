@@ -559,36 +559,65 @@ body {
   to { transform: rotate(360deg); }
 }
 
+.desktop-sidebar {
+  display: none;
+}
+
 /* Responsive grid layout adjustments for Tablet/Desktop sizes */
 @media (min-width: 768px) {
+  .app-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+
+  .desktop-sidebar {
+    display: flex;
+    flex-direction: column;
+    background: rgba(14, 10, 26, 0.85);
+    border-right: 1px solid var(--card-border);
+    padding: 30px 20px;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    gap: 20px;
+  }
+
+  .nav-link {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: all 0.2s ease;
+  }
+
+  .nav-link:hover {
+    color: var(--brand-blue);
+    background: rgba(0, 240, 255, 0.05);
+  }
+
+  .nav-link.active {
+    color: #000;
+    background: var(--brand-blue);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+  }
+  
   .app-container {
-    max-width: 960px;
-    margin: 0 auto;
+    max-width: 100%;
     padding-bottom: 20px;
   }
   
   .bottom-nav {
-    display: none; /* side navigation or tabs instead on large screens */
-  }
-
-  .desktop-nav-header {
-    display: flex;
-    gap: 15px;
-  }
-  
-  .nav-item-desktop {
-    color: var(--text-secondary);
-    text-decoration: none;
-    font-size: 0.9rem;
-    font-weight: 600;
-    transition: color 0.2s;
-  }
-  
-  .nav-item-desktop.active {
-    color: var(--brand-blue);
+    display: none;
   }
   
   .content-pane {
-    max-width: 900px;
+    max-width: 860px;
+    padding: 30px;
   }
 }
