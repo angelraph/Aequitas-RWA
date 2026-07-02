@@ -18,6 +18,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../frontend')));
 
+function getRpcNode(req) {
+  const net = req.headers['x-network'] || 'testnet';
+  if (net === 'mainnet') {
+    return 'https://node.mainnet.casper.network/rpc';
+  }
+  return 'https://node.testnet.casper.network/rpc';
+}
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
@@ -46,6 +54,8 @@ function addLog(agent, message, type = 'info') {
 // ----------------------------------------------------
 // Mock Casper Blockchain State
 // ----------------------------------------------------
+const PROCESSED_DEPLOYS = new Set();
+
 const LEDGER = {
   accounts: {
     'user_wallet': { balance: '500000.00' },
@@ -221,6 +231,23 @@ app.post('/api/agent-trigger', (req, res) => {
   res.json({ success: true });
 });
 
+// Compliance Questionnaire Submission API
+app.post('/api/compliance/submit', (req, res) => {
+  const { sender, name, email, country } = req.body;
+  if (!sender || !name || !email || !country) {
+    return res.status(400).json({ error: "Missing required KYC information" });
+  }
+
+  const deniedCountries = ['KP', 'IR', 'SY', 'CU'];
+  if (deniedCountries.includes(country.toUpperCase())) {
+    return res.status(400).json({ error: `Sanctions Screening Error: Investor region ${country} is on the OFAC trade restriction list.` });
+  }
+
+  const proofNumeric = (BigInt("0x" + Math.random().toString(16).substring(2, 10) + Math.random().toString(16).substring(2, 10))).toString();
+  addLog('Compliance Agent', `ZK Screening Questionnaire received for ${name} (${email}, ${country}). Status: APPROVED. Generating proof...`, 'success');
+  res.json({ success: true, proofHash: proofNumeric });
+});
+
 // Compliance Screen API
 app.post('/api/compliance/screen', (req, res) => {
   const { sender } = req.body;
@@ -308,39 +335,16 @@ app.post('/api/ai/invest', async (req, res) => {
   try {
     const result = await runOrchestration(prompt, 0, LEDGER, OFF_CHAIN_PREMIUM_SOURCE, addLog, broadcastState);
 
-    const vault = LEDGER.contracts.AequitasVault;
-    
-    // Register ZK proof hash locally in the compliance ledger
-    LEDGER.compliance[sender] = {
-      status: 'VERIFIED',
-      proofHash: result.zkProofHash
-    };
-
-    // Update Allocations based on dynamic calculations
-    for (const [assetId, amount] of Object.entries(result.targetAllocations)) {
-      vault.allocations[assetId] = amount.toFixed(2);
-    }
-
-    const txHash = "tx_ai_rebalance_" + Math.random().toString(36).substring(2, 9);
-    const time = new Date().toLocaleTimeString();
-
-    LEDGER.transactions.push({
-      id: txHash,
-      type: "CALL",
-      sender,
-      time,
-      description: `AI Swarm Rebalance: "${prompt}"`
-    });
-
     broadcastState({
       type: 'AI_CHAT_RESPONSE',
       data: {
         message: result.explanation,
-        ledger: LEDGER
+        targetAllocations: result.targetAllocations,
+        zkProofHash: result.zkProofHash
       }
     });
 
-    res.json({ success: true, txHash });
+    res.json({ success: true, targetAllocations: result.targetAllocations, zkProofHash: result.zkProofHash });
   } catch (error) {
     console.error("AI Investment failed:", error);
     res.status(500).json({ error: error.message });
@@ -755,7 +759,8 @@ app.post('/api/contracts/vault-reallocate', (req, res) => {
 // Casper Testnet RPC Status checker
 app.get('/api/casper/status', async (req, res) => {
   try {
-    const response = await fetch('https://node.testnet.casper.network/rpc', {
+    const node = getRpcNode(req);
+    const response = await fetch(node, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -801,7 +806,8 @@ app.post('/api/casper/broadcast', async (req, res) => {
   }
 
   try {
-    const rpcRes = await fetch('https://node.testnet.casper.network/rpc', {
+    const node = getRpcNode(req);
+    const rpcRes = await fetch(node, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -822,7 +828,7 @@ app.post('/api/casper/broadcast', async (req, res) => {
     res.json({ success: true, deployHash });
   } catch (err) {
     console.error("RPC broadcast failed:", err);
-    res.status(500).json({ error: "Failed to broadcast transaction to Casper Testnet: " + err.message });
+    res.status(500).json({ error: "Failed to broadcast transaction to Casper: " + err.message });
   }
 });
 
@@ -834,7 +840,8 @@ app.get('/api/casper/deploy-status', async (req, res) => {
   }
 
   try {
-    const rpcRes = await fetch('https://node.testnet.casper.network/rpc', {
+    const node = getRpcNode(req);
+    const rpcRes = await fetch(node, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -853,6 +860,145 @@ app.get('/api/casper/deploy-status', async (req, res) => {
     const executionResults = rpcData.result.execution_results || [];
     const confirmed = executionResults.length > 0;
     const success = confirmed && !executionResults[0].result.Failure;
+
+    // Process Ledger update on confirmation
+    if (confirmed && success && !PROCESSED_DEPLOYS.has(hash)) {
+      PROCESSED_DEPLOYS.add(hash);
+      
+      const deployObj = rpcData.result.deploy;
+      let entrypoint = '';
+      let sender = '';
+      let argsObj = {};
+
+      if (deployObj) {
+        sender = deployObj.header.account;
+        const session = deployObj.session;
+        
+        let contractCall = null;
+        if (session) {
+          if (session.StoredContractByHash) contractCall = session.StoredContractByHash;
+          else if (session.StoredVersionedContractByName) contractCall = session.StoredVersionedContractByName;
+          else if (session.StoredContractByName) contractCall = session.StoredContractByName;
+        }
+
+        if (contractCall) {
+          entrypoint = contractCall.entry_point;
+          if (Array.isArray(contractCall.args)) {
+            contractCall.args.forEach(([name, valObj]) => {
+              argsObj[name] = valObj.parsed;
+            });
+          }
+        }
+      }
+
+      const time = new Date().toLocaleTimeString();
+
+      if (entrypoint === 'deposit' || entrypoint === 'withdraw') {
+        const parsedMotes = argsObj['amount'];
+        if (parsedMotes) {
+          const amountCspr = parseFloat(parsedMotes) / 1000000000;
+          
+          if (!LEDGER.accounts[sender]) {
+            LEDGER.accounts[sender] = { balance: "500000.00", staked: "0.00" };
+          }
+          if (typeof LEDGER.accounts[sender].staked === 'undefined') {
+            LEDGER.accounts[sender].staked = "0.00";
+          }
+          
+          let bal = parseFloat(LEDGER.accounts[sender].balance);
+          let stk = parseFloat(LEDGER.accounts[sender].staked);
+          
+          if (entrypoint === 'deposit') {
+            bal -= amountCspr;
+            stk += amountCspr;
+            LEDGER.transactions.push({
+              id: hash,
+              type: "DEPOSIT",
+              sender: sender,
+              time: time,
+              description: `Deposit ${amountCspr.toLocaleString()} CSPR to Vault`
+            });
+            addLog('Casper Network', `Verified On-Chain Deposit: ${amountCspr.toLocaleString()} CSPR for ${sender}`, 'success');
+          } else {
+            bal += amountCspr;
+            stk -= amountCspr;
+            LEDGER.transactions.push({
+              id: hash,
+              type: "WITHDRAW",
+              sender: sender,
+              time: time,
+              description: `Withdraw ${amountCspr.toLocaleString()} CSPR from Vault`
+            });
+            addLog('Casper Network', `Verified On-Chain Withdrawal: ${amountCspr.toLocaleString()} CSPR for ${sender}`, 'success');
+          }
+          
+          LEDGER.accounts[sender].balance = bal.toFixed(2);
+          LEDGER.accounts[sender].staked = stk.toFixed(2);
+          
+          // Broadcast to connected websockets
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'INIT_STATE', data: { ...LEDGER, logs: [] } }));
+            }
+          });
+        }
+      } else if (entrypoint === 'register_compliance_proof') {
+        const proofVal = argsObj['proof_hash'] || "0x3F8E92B1C789F";
+        
+        LEDGER.compliance[sender] = {
+          status: 'VERIFIED',
+          proofHash: proofVal.toString()
+        };
+        
+        LEDGER.transactions.push({
+          id: hash,
+          type: "COMPLIANCE",
+          sender: sender,
+          time: time,
+          description: `Register Compliance Proof: ZK-hash ${proofVal}`
+        });
+        
+        addLog('Compliance Agent', `On-Chain Proof Registered: ZK Verification successful for ${sender}`, 'success');
+        
+        wss.clients.forEach(client => {
+          if (client.readyState === 1) {
+            client.send(JSON.stringify({ type: 'COMPLIANCE_UPDATE', data: { compliance: LEDGER.compliance } }));
+          }
+        });
+      } else if (entrypoint === 'reallocate_capital') {
+        const allocStr = argsObj['allocations'];
+        if (allocStr) {
+          try {
+            const allocations = JSON.parse(allocStr);
+            let changes = [];
+            for (const [assetId, percent] of Object.entries(allocations)) {
+              if (LEDGER.contracts[assetId]) {
+                const oldWeight = LEDGER.contracts[assetId].currentWeight || 0;
+                const newWeight = Math.round(percent * 100);
+                LEDGER.contracts[assetId].currentWeight = newWeight;
+                changes.push(`${assetId} weight adjusted to ${newWeight}%`);
+              }
+            }
+            LEDGER.transactions.push({
+              id: hash,
+              type: "REALLOCATION",
+              sender: sender,
+              time: time,
+              description: `Rebalance portfolios using Odra reallocate_capital()`
+            });
+            addLog('Treasury Router', `On-Chain Portfolio Rebalanced. Changes: ${changes.join(', ')}`, 'success');
+            
+            wss.clients.forEach(client => {
+              if (client.readyState === 1) {
+                client.send(JSON.stringify({ type: 'INIT_STATE', data: { ...LEDGER, logs: [] } }));
+              }
+            });
+          } catch (e) {
+            console.error("Failed to parse allocation string:", e);
+          }
+        }
+      }
+    }
 
     res.json({
       confirmed,

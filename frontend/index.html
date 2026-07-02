@@ -68,7 +68,7 @@
           <div class="spinner-glow" style="margin:0 auto 10px; width:30px; height:30px;"></div>
           <span style="font-size:0.8rem; color:var(--brand-orange)">Publishing ZK Suitability Proof Hash...</span>
         </div>
-        <button class="btn-action-primary" id="btn-onboard-kyc" onclick="runOnboardKYC()">Run KYC Sanctions Screen</button>
+        <button class="btn-action-primary" id="btn-onboard-kyc" onclick="showKycModal()">Run KYC Sanctions Screen</button>
       </div>
 
       <!-- Choose Investment Goal Step -->
@@ -100,6 +100,43 @@
     <p style="color:var(--text-secondary); font-size:0.9rem; text-align:center; max-width:300px; line-height:1.4;" id="tx-modal-desc">Communicating with Casper wallet provider...</p>
     <div id="tx-modal-action-box" style="margin-top:20px; width:100%; display:none; text-align:center;">
       <button class="btn-action-primary" onclick="closeTxModal()" style="display:inline-block; width:auto; padding:8px 20px;">Return to Dashboard</button>
+    </div>
+  </div>
+
+  <!-- KYC Verification Form Modal overlay -->
+  <div class="tx-status-overlay" id="kyc-modal" style="display:none; align-items:center; justify-content:center; z-index: 1000;">
+    <div class="card-premium" style="width: 90%; max-width: 400px; padding: 24px; position: relative; background: rgba(18, 14, 33, 0.95); border: 1px solid var(--card-border); border-radius: var(--radius-md); box-shadow: 0 8px 32px var(--neon-glow);">
+      <button onclick="closeKycModal()" style="position: absolute; top: 12px; right: 16px; background: transparent; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; line-height: 1;">&times;</button>
+      <h3 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; color: var(--brand-blue);">KYC Sanctions Screening</h3>
+      <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 16px;">Please complete the screening questionnaire. A zero-knowledge compliance proof will be generated and signed by your wallet.</p>
+      
+      <form id="kyc-submit-form" onsubmit="submitKYCForm(event)" style="display: flex; flex-direction: column; gap: 12px;">
+        <div class="form-group" style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+          <label style="font-size: 0.75rem; color: var(--text-secondary);">Full Legal Name</label>
+          <input type="text" id="kyc-name" required placeholder="John Doe" style="background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: var(--radius-sm); outline: none; font-size: 0.85rem;">
+        </div>
+        <div class="form-group" style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+          <label style="font-size: 0.75rem; color: var(--text-secondary);">Email Address</label>
+          <input type="email" id="kyc-email" required placeholder="john@example.com" style="background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: var(--radius-sm); outline: none; font-size: 0.85rem;">
+        </div>
+        <div class="form-group" style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+          <label style="font-size: 0.75rem; color: var(--text-secondary);">Country of Residence</label>
+          <select id="kyc-country" required style="background: rgba(255,255,255,0.04); border: 1px solid var(--card-border); color: #fff; padding: 10px; border-radius: var(--radius-sm); outline: none; font-size: 0.85rem; width: 100%;">
+            <option value="US">United States</option>
+            <option value="GB">United Kingdom</option>
+            <option value="FR">France</option>
+            <option value="DE">Germany</option>
+            <option value="CA">Canada</option>
+            <option value="JP">Japan</option>
+            <option value="OTHER">Other compliant region</option>
+          </select>
+        </div>
+        <div class="form-group" style="display: flex; gap: 8px; align-items: flex-start; margin-top: 4px; text-align: left;">
+          <input type="checkbox" id="kyc-agree" required style="width: 16px; height: 16px; margin-top: 2px; cursor: pointer;">
+          <label for="kyc-agree" style="font-size: 0.75rem; color: var(--text-secondary); line-height: 1.3;">I declare I am not on any global trade sanctions lists (such as OFAC SDN list) and authorize on-chain suitability verification.</label>
+        </div>
+        <button type="submit" class="btn-action-primary" style="margin-top: 8px; width: 100%;">Generate ZK-Proof & Sign</button>
+      </form>
     </div>
   </div>
 
@@ -311,42 +348,59 @@
 
       <!-- Pane 6: AI Advisor (Assistant Terminals) -->
       <section class="content-pane" id="pane-ai">
-        <div class="card-premium">
-          <h3 class="section-title">AI Staking Advisor</h3>
-          <p class="section-subtitle">State your financial preferences or type a custom command. Our agent swarm will construct, screen, and route yields accordingly.</p>
-          
-          <div class="ai-chat-window">
-            <div class="ai-chat-history" id="chat-history">
-              <div class="chat-bubble assistant">
-                <strong>Aequitas Advisor Agent:</strong> Hello. I am your automated portfolio advisor. Describe your goals (e.g. <em>"Invest 50,000 CSPR aggressively"</em> or <em>"Construct a conservative portfolio"</em>). I will autonomously handle compliance, KYC proofing, and asset routing.
+        <div class="ai-advisor-grid" style="display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 16px; align-items: start;">
+          <!-- Left Column: Chat Window and Preset Goals -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="card-premium" style="margin-bottom: 0;">
+              <h3 class="section-title">AI Staking Advisor</h3>
+              <p class="section-subtitle">State your financial preferences or type a custom command. Our agent swarm will construct, screen, and route yields accordingly.</p>
+              
+              <div class="ai-chat-window">
+                <div class="ai-chat-history" id="chat-history" style="height: 300px; overflow-y: auto;">
+                  <div class="chat-bubble assistant">
+                    <strong>Aequitas Advisor Agent:</strong> Hello. I am your automated portfolio advisor. Describe your goals (e.g. <em>"Invest 50,000 CSPR aggressively"</em> or <em>"Construct a conservative portfolio"</em>). I will autonomously handle compliance, KYC proofing, and asset routing.
+                  </div>
+                </div>
+
+                <div class="ai-chat-input-bar">
+                  <input type="text" id="chat-input" placeholder="Type your staking target (e.g. Invest 10000 conservatively)...">
+                  <button class="btn-chat-submit" id="btn-chat-send" onclick="submitAIInvestmentGoal()">
+                    <span style="color:#000; font-size:1.1rem; font-weight:bold;">&rarr;</span>
+                  </button>
+                </div>
               </div>
             </div>
 
-            <!-- Collaboration Timeline inside chat -->
-            <div class="collaboration-board-compact" id="collaboration-timeline">
-              <h4 style="color:var(--brand-blue); font-size:0.75rem; text-transform:uppercase; margin-bottom:6px;">Swarm Consensus Board</h4>
-              <div id="timeline-steps" style="display:flex; flex-direction:column; gap:6px; max-height:100px; overflow-y:auto;">
-                <!-- Streaming timeline updates -->
+            <!-- Quick prompts -->
+            <div class="card-premium">
+              <h3 class="section-title" style="font-size:1rem;">Preset Investment Targets</h3>
+              <div class="quick-goals-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <button class="btn-quick-goal" onclick="submitPresetGoal('Invest 25000 conservatively')">🛡️ Conservative Income Staking</button>
+                <button class="btn-quick-goal" onclick="submitPresetGoal('Staging 50000 with moderate growth targets')">⚖️ Moderate Allocation</button>
+                <button class="btn-quick-goal" onclick="submitPresetGoal('Optimize yield allocation aggressively')">🚀 Maximum APY Route</button>
+                <button class="btn-quick-goal" onclick="submitPresetGoal('Revoke compliance proofs and stop staking')">🚨 Trigger Emergency Exit</button>
               </div>
-            </div>
-
-            <div class="ai-chat-input-bar">
-              <input type="text" id="chat-input" placeholder="Type your staking target (e.g. Invest 10000 conservatively)...">
-              <button class="btn-chat-submit" id="btn-chat-send" onclick="submitAIInvestmentGoal()">
-                <span style="color:#000; font-size:1.1rem; font-weight:bold;">&rarr;</span>
-              </button>
             </div>
           </div>
-        </div>
 
-        <!-- Quick prompts -->
-        <div class="card-premium">
-          <h3 class="section-title" style="font-size:1rem;">Preset Investment Targets</h3>
-          <div class="quick-goals-grid">
-            <button class="btn-quick-goal" onclick="submitPresetGoal('Invest 25000 conservatively')">🛡️ Conservative Income Staking</button>
-            <button class="btn-quick-goal" onclick="submitPresetGoal('Staging 50000 with moderate growth targets')">⚖️ Moderate Allocation</button>
-            <button class="btn-quick-goal" onclick="submitPresetGoal('Optimize yield allocation aggressively')">🚀 Maximum APY Route</button>
-            <button class="btn-quick-goal" onclick="submitPresetGoal('Revoke compliance proofs and stop staking')">🚨 Trigger Emergency Exit</button>
+          <!-- Right Column: Swarm Status & Active Proposal Execution -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- Swarm Board -->
+            <div class="card-premium" id="collaboration-timeline" style="margin-bottom: 0;">
+              <h3 class="section-title" style="font-size: 1rem; color: var(--brand-blue);">Swarm Consensus Board</h3>
+              <div id="timeline-steps" style="display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; margin-top:8px;">
+                <span style="color:var(--text-secondary); font-size:0.8rem;">Ready for user prompt...</span>
+              </div>
+            </div>
+
+            <!-- Recommendation Proposal Card -->
+            <div class="card-premium" id="ai-proposal-card" style="display: none; border-color: var(--brand-green);">
+              <h3 class="section-title" style="font-size: 1rem; color: var(--brand-green);">Proposed Portfolio Allocation</h3>
+              <div id="ai-proposal-details" style="font-size: 0.85rem; line-height: 1.5; margin: 10px 0; color: var(--text-primary); text-align: left;">
+                <!-- Dynamically populated -->
+              </div>
+              <button class="btn-action-primary" id="btn-execute-rebalance" onclick="executeRecommendation()" style="margin-top: 10px; width: 100%;">Execute Recommendation</button>
+            </div>
           </div>
         </div>
       </section>
@@ -374,7 +428,7 @@
           </div>
 
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:15px;">
-            <button class="btn-action-primary" id="btn-kyc-verify" style="font-size:0.9rem;" onclick="runOnboardKYC()">Run KYC Screen</button>
+            <button class="btn-action-primary" id="btn-kyc-verify" style="font-size:0.9rem;" onclick="showKycModal()">Run KYC Screen</button>
             <button class="btn-action-secondary" id="btn-kyc-revoke" style="font-size:0.9rem; border-color:var(--brand-pink); color:var(--brand-pink);" onclick="revokeKYCProof()">Revoke Proof</button>
           </div>
         </div>

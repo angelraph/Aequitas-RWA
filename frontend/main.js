@@ -17,8 +17,8 @@ let onboardingCompleted = localStorage.getItem('aequitas_onboarding_completed') 
 // Client-Side Router mapping
 const routes = {
   '/': 'home',
-  '/dashboard': 'home',
-  '/portfolio': 'home',
+  '/dashboard': 'dashboard',
+  '/portfolio': 'portfolio',
   '/invest': 'invest',
   '/ai': 'ai',
   '/assets': 'assets',
@@ -697,6 +697,98 @@ function setStakingAction(action) {
 
 // ----------------------------------------------------
 // Onboarding Stepper Actions
+// Custom fetch wrapper to pass X-Network header
+async function apiFetch(url, options = {}) {
+  const net = localStorage.getItem('aequitas_setting_network') || 'testnet';
+  if (!options.headers) {
+    options.headers = {};
+  }
+  options.headers['X-Network'] = net;
+  return fetch(url, options);
+}
+
+async function initCasperWalletListeners() {
+  const provider = getCasperProvider();
+  if (provider) {
+    try {
+      window.addEventListener('casper-wallet:activeKeyChanged', (event) => {
+        console.log("Casper Wallet key changed:", event.detail.activeKey);
+        if (event.detail.activeKey) {
+          casperWalletAddress = event.detail.activeKey;
+          walletMode = 'casper';
+          localStorage.setItem('aequitas_wallet_mode', 'casper');
+          localStorage.setItem('aequitas_wallet_address', casperWalletAddress);
+        } else {
+          walletMode = 'demo';
+          casperWalletAddress = 'user_wallet';
+          localStorage.setItem('aequitas_wallet_mode', 'demo');
+          localStorage.setItem('aequitas_wallet_address', 'user_wallet');
+        }
+        apiFetch('/api/state')
+          .then(res => res.json())
+          .then(state => updateUI(state));
+      });
+
+      window.addEventListener('casper-wallet:disconnected', () => {
+        console.log("Casper Wallet disconnected");
+        walletMode = 'demo';
+        casperWalletAddress = 'user_wallet';
+        localStorage.setItem('aequitas_wallet_mode', 'demo');
+        localStorage.setItem('aequitas_wallet_address', 'user_wallet');
+        apiFetch('/api/state')
+          .then(res => res.json())
+          .then(state => updateUI(state));
+      });
+
+      window.addEventListener('casper-wallet:connected', (event) => {
+        console.log("Casper Wallet connected:", event.detail.activeKey);
+        if (event.detail.activeKey) {
+          casperWalletAddress = event.detail.activeKey;
+          walletMode = 'casper';
+          localStorage.setItem('aequitas_wallet_mode', 'casper');
+          localStorage.setItem('aequitas_wallet_address', casperWalletAddress);
+          apiFetch('/api/state')
+            .then(res => res.json())
+            .then(state => updateUI(state));
+        }
+      });
+      
+      // Auto-detect existing connection
+      let isConnected = false;
+      if (typeof window.CasperWalletProvider !== 'undefined') {
+        const walletProvider = window.CasperWalletProvider();
+        isConnected = await walletProvider.isConnected();
+      } else if (typeof window.casperlabsHelper !== 'undefined') {
+        isConnected = await window.casperlabsHelper.isConnected();
+      }
+      
+      if (isConnected) {
+        let activeKey;
+        if (typeof window.CasperWalletProvider !== 'undefined') {
+          const walletProvider = window.CasperWalletProvider();
+          activeKey = await walletProvider.getActivePublicKey();
+        } else {
+          activeKey = await window.casperlabsHelper.getActivePublicKey();
+        }
+        if (activeKey) {
+          casperWalletAddress = activeKey;
+          walletMode = 'casper';
+          localStorage.setItem('aequitas_wallet_mode', 'casper');
+          localStorage.setItem('aequitas_wallet_address', activeKey);
+          
+          const providerSel = document.getElementById('setting-wallet-provider');
+          if (providerSel) {
+            providerSel.value = 'wallet';
+            localStorage.setItem('aequitas_setting_wallet_provider', 'wallet');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Casper Wallet init listeners error:", e);
+    }
+  }
+}
+
 // ----------------------------------------------------
 function getCasperProvider() {
   if (typeof window.CasperWalletProvider !== 'undefined') {
@@ -922,7 +1014,7 @@ async function confirmOnboardingStaking() {
   // Submit AI investment request to start simulation rebalancing
   const text = `Invest conservatively for ${selectedStrategy} strategy`;
   
-  fetch('/api/ai/invest', {
+  apiFetch('/api/ai/invest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: text, sender: casperWalletAddress })
@@ -937,12 +1029,23 @@ function closeTxModal() {
   document.getElementById('tx-modal-action-box').style.display = 'none';
 }
 
+let pendingRecommendation = null;
+
 async function executeStakingTransaction() {
+  if (walletMode === 'casper' && casperWalletAddress === 'user_wallet') {
+    alert("Wallet not connected: Please link your Casper Wallet first.");
+    return;
+  }
+
   const amountInput = document.getElementById('invest-amount-input') || document.getElementById('amount-input');
+  if (!amountInput) {
+    alert("Staking input element not found in DOM.");
+    return;
+  }
   const amount = parseFloat(amountInput.value);
   
   if (isNaN(amount) || amount <= 0) {
-    alert("Please enter a valid positive CSPR amount.");
+    alert("Invalid amount: Please enter a valid positive CSPR amount.");
     return;
   }
 
@@ -976,7 +1079,7 @@ async function executeStakingTransaction() {
     title.innerText = "Structuring Deploy";
     desc.innerText = `Requesting transaction payload structure for AequitasVault.${currentAction}(${amount} CSPR)...`;
     
-    const buildRes = await fetch('/api/casper/build-deploy', {
+    const buildRes = await apiFetch('/api/casper/build-deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1020,9 +1123,9 @@ async function executeStakingTransaction() {
 
     // Step 3: Broadcast to Testnet Node
     title.innerText = "Broadcasting Deploy";
-    desc.innerText = "Submitting signed transaction to Casper Testnet node RPC interface...";
+    desc.innerText = "Submitting signed transaction to Casper node RPC interface...";
 
-    const broadcastRes = await fetch(walletMode === 'casper' ? '/api/casper/broadcast' : `/api/${currentAction}`, {
+    const broadcastRes = await apiFetch(walletMode === 'casper' ? '/api/casper/broadcast' : `/api/${currentAction}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(walletMode === 'casper' ? { signedDeploy } : { sender: casperWalletAddress, amount })
@@ -1040,9 +1143,9 @@ async function executeStakingTransaction() {
     title.innerText = "Waiting for Block Confirmation";
     desc.innerHTML = `
       <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
-      <p style="color:var(--text-secondary); margin-bottom:12px;">Querying Casper Testnet RPC node (info_get_deploy)...</p>
+      <p style="color:var(--text-secondary); margin-bottom:12px;">Querying Casper RPC node (info_get_deploy)...</p>
       <a href="https://testnet.cspr.live/deploy/${deployHash}" target="_blank" class="btn-action-secondary" style="padding:6px 12px; font-size:0.8rem; display:inline-block; width:auto;">
-        🔍 View on CSPR.live Testnet Explorer
+        🔍 View on CSPR.live Explorer
       </a>
     `;
 
@@ -1053,7 +1156,7 @@ async function executeStakingTransaction() {
       await new Promise(r => setTimeout(r, 4000));
       attempts++;
       
-      const pollRes = await fetch(walletMode === 'casper' ? `/api/casper/deploy-status?hash=${deployHash}` : '/api/state');
+      const pollRes = await apiFetch(walletMode === 'casper' ? `/api/casper/deploy-status?hash=${deployHash}` : '/api/state');
       if (pollRes.ok) {
         if (walletMode === 'casper') {
           const pollData = await pollRes.json();
@@ -1097,7 +1200,162 @@ async function executeStakingTransaction() {
   actionBox.style.display = 'block';
 
   // Trigger state updates
-  fetch('/api/state')
+  apiFetch('/api/state')
+    .then(r => r.json())
+    .then(state => updateUI(state));
+}
+
+async function executeRecommendation() {
+  if (!pendingRecommendation) {
+    alert("No active recommendation to execute.");
+    return;
+  }
+  
+  if (walletMode === 'casper' && casperWalletAddress === 'user_wallet') {
+    alert("Wallet not connected: Please connect your Casper Wallet first.");
+    return;
+  }
+
+  const provider = getCasperProvider();
+  const modal = document.getElementById('tx-modal');
+  const title = document.getElementById('tx-modal-title');
+  const desc = document.getElementById('tx-modal-desc');
+  const actionBox = document.getElementById('tx-modal-action-box');
+  
+  modal.style.display = 'flex';
+  actionBox.style.display = 'none';
+
+  if (walletMode === 'casper' && !provider) {
+    title.innerText = "Casper Wallet Required";
+    desc.innerHTML = `
+      <div style="text-align:left; font-size:0.85rem;">
+        <p style="color:var(--brand-pink); font-weight:bold; margin-bottom:8px;">No Casper wallet extension was detected.</p>
+        <p style="color:var(--text-secondary); margin-bottom:8px;">To complete the rebalancing, please install one of the supported Casper extensions.</p>
+      </div>
+    `;
+    actionBox.style.display = 'block';
+    return;
+  }
+
+  try {
+    title.innerText = "Structuring Rebalance Deploy";
+    desc.innerText = "Requesting transaction payload structure for AequitasVault.reallocate_capital()...";
+    
+    // Call the build deploy endpoint
+    const buildRes = await apiFetch('/api/casper/build-deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entrypoint: 'reallocate_capital',
+        sender: casperWalletAddress,
+        args: [
+          ["allocations", { cl_type: "String", parsed: JSON.stringify(pendingRecommendation) }]
+        ]
+      })
+    });
+
+    if (!buildRes.ok) {
+      const err = await buildRes.json();
+      throw new Error(err.error || "Failed to structure rebalance payload");
+    }
+
+    const { deploy } = await buildRes.json();
+
+    title.innerText = "Awaiting Wallet Signature";
+    desc.innerText = "Please review and approve the rebalance transaction in your Casper wallet extension popup.";
+
+    let signedDeploy;
+    if (walletMode === 'casper') {
+      if (typeof window.CasperWalletProvider !== 'undefined') {
+        const walletProvider = window.CasperWalletProvider();
+        const signed = await walletProvider.sign(JSON.stringify(deploy), casperWalletAddress);
+        if (signed.cancelled) {
+          throw new Error("Transaction signature cancelled by user.");
+        }
+        signedDeploy = JSON.parse(signed.deploy);
+      } else {
+        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deploy), casperWalletAddress);
+        signedDeploy = JSON.parse(signedJson);
+      }
+    } else {
+      await new Promise(r => setTimeout(r, 1200));
+      signedDeploy = deploy;
+    }
+
+    title.innerText = "Broadcasting Rebalance";
+    desc.innerText = "Submitting signed transaction to Casper node RPC...";
+
+    const broadcastRes = await apiFetch(walletMode === 'casper' ? '/api/casper/broadcast' : '/api/contracts/vault-reallocate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(walletMode === 'casper' ? { signedDeploy } : { sender: 'treasury_router_wallet', allocations: pendingRecommendation })
+    });
+
+    if (!broadcastRes.ok) {
+      const err = await broadcastRes.json();
+      throw new Error(err.error || "Transaction broadcast failed.");
+    }
+
+    const resData = await broadcastRes.json();
+    const deployHash = walletMode === 'casper' ? resData.deployHash : resData.txHash;
+
+    title.innerText = "Waiting for Block Confirmation";
+    desc.innerHTML = `
+      <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+      <p style="color:var(--text-secondary); margin-bottom:12px;">Querying Casper RPC node (info_get_deploy)...</p>
+    `;
+
+    let confirmed = false;
+    let attempts = 0;
+    while (!confirmed && attempts < 20) {
+      await new Promise(r => setTimeout(r, 4000));
+      attempts++;
+      
+      const pollRes = await apiFetch(walletMode === 'casper' ? `/api/casper/deploy-status?hash=${deployHash}` : '/api/state');
+      if (pollRes.ok) {
+        if (walletMode === 'casper') {
+          const pollData = await pollRes.json();
+          if (pollData.confirmed) {
+            confirmed = true;
+            if (pollData.success) {
+              title.innerText = "Rebalance Complete";
+              desc.innerHTML = `
+                <p style="color:var(--brand-green); font-weight:bold; margin-bottom:8px;">Rebalance executed successfully!</p>
+                <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+              `;
+            } else {
+              throw new Error("Transaction execution failed inside contract logic.");
+            }
+          }
+        } else {
+          confirmed = true;
+          title.innerText = "Rebalance Complete";
+          desc.innerHTML = `
+            <p style="color:var(--brand-green); font-weight:bold; margin-bottom:8px;">Rebalance executed successfully!</p>
+            <p style="margin-bottom:8px;">Sim Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+          `;
+        }
+      }
+    }
+
+    if (!confirmed) {
+      throw new Error("Transaction verification timed out. Please check the explorer later.");
+    }
+
+  } catch (err) {
+    console.error(err);
+    title.innerText = "Transaction Error";
+    desc.innerHTML = `<span style="color:var(--brand-pink); font-size:0.9rem;">${err.message}</span>`;
+  }
+
+  actionBox.style.display = 'block';
+  pendingRecommendation = null;
+
+  const execBtn = document.getElementById('ai-proposal-card');
+  if (execBtn) execBtn.style.display = 'none';
+
+  // Trigger state updates
+  apiFetch('/api/state')
     .then(r => r.json())
     .then(state => updateUI(state));
 }
@@ -1156,7 +1414,7 @@ async function submitAIInvestmentGoal() {
   await streamSwarmBootSequence();
 
   // Call AI orchestrator API
-  fetch('/api/ai/invest', {
+  apiFetch('/api/ai/invest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: text, sender: casperWalletAddress })
@@ -1175,12 +1433,12 @@ function submitPresetGoal(text) {
 // economic shock simulator
 // ----------------------------------------------------
 function triggerShock(assetId, type) {
-  fetch('/api/trigger-shock', {
+  apiFetch('/api/trigger-shock', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assetId, type })
   }).then(() => {
-    fetch('/api/state')
+    apiFetch('/api/state')
       .then(res => res.json())
       .then(state => updateUI(state));
   });
@@ -1229,7 +1487,7 @@ function connectWebSocket() {
       appendConsoleLog(msg.data);
       triggerSwarmParticleEffect(msg.data);
     } else if (msg.type === 'LAYOUT_UPDATE' || msg.type === 'COMPLIANCE_UPDATE') {
-      fetch('/api/state')
+      apiFetch('/api/state')
         .then(res => res.json())
         .then(state => updateUI(state));
     } else if (msg.type === 'AGENT_COLLABORATION_STEP') {
@@ -1271,8 +1529,31 @@ function connectWebSocket() {
       history.insertAdjacentHTML('beforeend', messageHtml);
       history.scrollTop = history.scrollHeight;
 
+      if (msg.data.targetAllocations) {
+        pendingRecommendation = msg.data.targetAllocations;
+        
+        const proposalCard = document.getElementById('ai-proposal-card');
+        const proposalDetails = document.getElementById('ai-proposal-details');
+        
+        if (proposalCard && proposalDetails) {
+          proposalCard.style.display = 'block';
+          
+          let detailsHtml = '<ul style="padding-left:16px; margin: 5px 0;">';
+          for (const [assetId, percent] of Object.entries(msg.data.targetAllocations)) {
+            detailsHtml += `<li><strong>${assetId}</strong>: ${(percent * 100).toFixed(0)}% allocation</li>`;
+          }
+          detailsHtml += '</ul>';
+          
+          proposalDetails.innerHTML = `
+            <p><strong>Swarm Recommendation Proposal:</strong></p>
+            ${detailsHtml}
+            <p style="font-size:0.75rem; color:var(--text-secondary); margin-top:8px;">Generated ZK proof hash: <code style="color:var(--brand-blue);">${msg.data.zkProofHash.substring(0, 10)}...</code></p>
+          `;
+        }
+      }
+
       if (msg.data.ledger) {
-        fetch('/api/state')
+        apiFetch('/api/state')
           .then(res => res.json())
           .then(state => updateUI(state));
       }
@@ -1389,12 +1670,12 @@ function resetOnboardingState() {
 }
 
 function revokeKYCProof() {
-  fetch('/api/compliance/revoke', {
+  apiFetch('/api/compliance/revoke', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sender: casperWalletAddress })
   }).then(() => {
-    fetch('/api/state')
+    apiFetch('/api/state')
       .then(res => res.json())
       .then(state => updateUI(state));
   });
@@ -1491,6 +1772,177 @@ function toggleThemeMode() {
   });
 }
 
+// KYC Modal functions
+function showKycModal() {
+  if (walletMode === 'casper' && casperWalletAddress === 'user_wallet') {
+    alert("Wallet not connected: Please connect your Casper Wallet first.");
+    return;
+  }
+  document.getElementById('kyc-modal').style.display = 'flex';
+}
+
+function closeKycModal() {
+  document.getElementById('kyc-modal').style.display = 'none';
+}
+
+async function submitKYCForm(event) {
+  event.preventDefault();
+  
+  const name = document.getElementById('kyc-name').value;
+  const email = document.getElementById('kyc-email').value;
+  const country = document.getElementById('kyc-country').value;
+  
+  closeKycModal();
+
+  const provider = getCasperProvider();
+  const modal = document.getElementById('tx-modal');
+  const title = document.getElementById('tx-modal-title');
+  const desc = document.getElementById('tx-modal-desc');
+  const actionBox = document.getElementById('tx-modal-action-box');
+  
+  modal.style.display = 'flex';
+  actionBox.style.display = 'none';
+
+  try {
+    title.innerText = "Generating ZK-Proof";
+    desc.innerText = "Submitting screening questionnaire to compliance agent backend...";
+
+    // 1. Submit to backend to generate proof
+    const submitRes = await apiFetch('/api/compliance/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sender: casperWalletAddress, name, email, country })
+    });
+
+    if (!submitRes.ok) {
+      const err = await submitRes.json();
+      throw new Error(err.error || "Failed to generate compliance ZK-proof");
+    }
+
+    const { proofHash } = await submitRes.json();
+
+    // 2. Structuring deploy to register compliance proof on-chain
+    title.innerText = "Structuring Compliance Deploy";
+    desc.innerText = "Requesting transaction payload structure for AequitasVault.register_compliance_proof()...";
+
+    const buildRes = await apiFetch('/api/casper/build-deploy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        entrypoint: 'register_compliance_proof',
+        sender: casperWalletAddress,
+        args: [
+          ["investor", { cl_type: "Key", parsed: casperWalletAddress }],
+          ["proof_hash", { cl_type: "U256", parsed: proofHash }]
+        ]
+      })
+    });
+
+    if (!buildRes.ok) {
+      const err = await buildRes.json();
+      throw new Error(err.error || "Failed to build compliance proof deploy");
+    }
+
+    const { deploy } = await buildRes.json();
+
+    // 3. Request Signature
+    title.innerText = "Awaiting Signature";
+    desc.innerText = "Please sign the compliance registration deploy in your Casper wallet extension.";
+
+    let signedDeploy;
+    if (walletMode === 'casper') {
+      if (typeof window.CasperWalletProvider !== 'undefined') {
+        const walletProvider = window.CasperWalletProvider();
+        const signed = await walletProvider.sign(JSON.stringify(deploy), casperWalletAddress);
+        if (signed.cancelled) {
+          throw new Error("Transaction signature cancelled by user.");
+        }
+        signedDeploy = JSON.parse(signed.deploy);
+      } else {
+        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deploy), casperWalletAddress);
+        signedDeploy = JSON.parse(signedJson);
+      }
+    } else {
+      await new Promise(r => setTimeout(r, 1200));
+      signedDeploy = deploy;
+    }
+
+    // 4. Broadcast
+    title.innerText = "Broadcasting Deploy";
+    desc.innerText = "Publishing ZK proof registration to Casper network...";
+
+    const broadcastRes = await apiFetch(walletMode === 'casper' ? '/api/casper/broadcast' : '/api/compliance/screen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(walletMode === 'casper' ? { signedDeploy } : { sender: casperWalletAddress })
+    });
+
+    if (!broadcastRes.ok) {
+      const err = await broadcastRes.json();
+      throw new Error(err.error || "Transaction broadcast failed.");
+    }
+
+    const resData = await broadcastRes.json();
+    const deployHash = walletMode === 'casper' ? resData.deployHash : resData.txHash;
+
+    // 5. Poll deploy status
+    title.innerText = "Waiting for Block Confirmation";
+    desc.innerHTML = `
+      <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+      <p style="color:var(--text-secondary); font-size:0.85rem;">Verifying block execution on Casper...</p>
+    `;
+
+    let confirmed = false;
+    let attempts = 0;
+    while (!confirmed && attempts < 20) {
+      await new Promise(r => setTimeout(r, 4000));
+      attempts++;
+      
+      const pollRes = await apiFetch(walletMode === 'casper' ? `/api/casper/deploy-status?hash=${deployHash}` : '/api/state');
+      if (pollRes.ok) {
+        if (walletMode === 'casper') {
+          const pollData = await pollRes.json();
+          if (pollData.confirmed) {
+            confirmed = true;
+            if (pollData.success) {
+              title.innerText = "Verification Complete";
+              desc.innerHTML = `
+                <p style="color:var(--brand-green); font-weight:bold; margin-bottom:8px;">ZK Compliance Proof registered successfully!</p>
+                <p style="margin-bottom:8px;">Deploy Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+              `;
+            } else {
+              throw new Error("Transaction execution failed inside contract compliance check.");
+            }
+          }
+        } else {
+          confirmed = true;
+          title.innerText = "Verification Complete";
+          desc.innerHTML = `
+            <p style="color:var(--brand-green); font-weight:bold; margin-bottom:8px;">ZK Compliance Proof registered successfully!</p>
+            <p style="margin-bottom:8px;">Sim Hash: <code style="color:var(--brand-blue); font-size:0.75rem;">${deployHash}</code></p>
+          `;
+        }
+      }
+    }
+
+    if (!confirmed) {
+      throw new Error("Transaction verification timed out. Please check the explorer later.");
+    }
+
+  } catch (err) {
+    console.error(err);
+    title.innerText = "Compliance Proof Error";
+    desc.innerHTML = `<span style="color:var(--brand-pink); font-size:0.9rem;">${err.message}</span>`;
+  }
+
+  actionBox.style.display = 'block';
+
+  // Trigger state updates
+  apiFetch('/api/state')
+    .then(r => r.json())
+    .then(state => updateUI(state));
+}
+
 // Intercept data-path clicks for routing
 document.addEventListener('click', e => {
   const link = e.target.closest('[data-path]');
@@ -1498,6 +1950,11 @@ document.addEventListener('click', e => {
     e.preventDefault();
     navigateTo(link.getAttribute('data-path'));
   }
+});
+
+// Browser back/forward button navigation routing
+window.addEventListener('popstate', () => {
+  handleRoute(window.location.pathname);
 });
 
 // Window resize
@@ -1529,7 +1986,7 @@ if (providerSel) {
     localStorage.setItem('aequitas_setting_wallet_provider', e.target.value);
     walletMode = e.target.value === 'mock' ? 'demo' : 'casper';
     localStorage.setItem('aequitas_wallet_mode', walletMode);
-    fetch('/api/state')
+    apiFetch('/api/state')
       .then(res => res.json())
       .then(state => updateUI(state));
   });
@@ -1537,6 +1994,7 @@ if (providerSel) {
 
 // Init and Boot Routing
 resizeCanvas();
+initCasperWalletListeners();
 drawSwarm();
 connectWebSocket();
 updateCasperStatus();
