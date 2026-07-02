@@ -6,6 +6,8 @@ import { startRiskEvaluator } from './agents/risk_evaluator.js';
 import { startTreasuryRouter } from './agents/treasury_router.js';
 import { calculateRiskMetrics } from './agents/risk_engine.js';
 import { runOrchestration } from './agents/multi_agent_system.js';
+import pkg from 'casper-js-sdk';
+const { DeployUtil, CLPublicKey, RuntimeArgs, CLValueBuilder, CLAccountHash } = pkg;
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1151,54 +1153,60 @@ app.post('/api/casper/build-deploy', (req, res) => {
   }
   console.log("=========================================");
 
-  // Process arguments to guarantee cl_type objects are populated with valid bytes strings
-  const processedArgs = (args || []).map(arg => {
-    if (Array.isArray(arg) && arg.length === 2) {
+  try {
+    const net = req.headers['x-network'] || 'testnet';
+    const chainName = net === 'mainnet' ? 'casper' : 'casper-testnet';
+
+    // 1. Build standard payment
+    const payment = DeployUtil.standardPayment(paymentAmount);
+
+    // 2. Reconstruct arguments map using CLValueBuilder
+    const map = {};
+    for (const arg of (args || [])) {
       const [name, valObj] = arg;
-      if (valObj && !valObj.bytes) {
-        if (valObj.cl_type === 'U512' || valObj.cl_type === 'U256') {
-          valObj.bytes = serializeU512(valObj.parsed);
-        } else if (valObj.cl_type === 'String') {
-          valObj.bytes = serializeString(valObj.parsed);
-        } else if (valObj.cl_type === 'Key') {
-          valObj.bytes = serializeKey(valObj.parsed);
+      if (valObj.cl_type === 'U512' || valObj.cl_type === 'U256') {
+        map[name] = CLValueBuilder.u512(valObj.parsed.toString());
+      } else if (valObj.cl_type === 'String') {
+        map[name] = CLValueBuilder.string(valObj.parsed);
+      } else if (valObj.cl_type === 'Key') {
+        let keyVal;
+        const cleanHex = valObj.parsed.startsWith('account-hash-') ? valObj.parsed.substring(13) : valObj.parsed;
+        if (valObj.parsed.startsWith('account-hash-') || cleanHex.length === 64) {
+          keyVal = new CLAccountHash(Uint8Array.from(Buffer.from(cleanHex, 'hex')));
+        } else {
+          keyVal = CLPublicKey.fromHex(valObj.parsed);
         }
+        map[name] = CLValueBuilder.key(keyVal);
       }
-      return [name, valObj];
     }
-    return arg;
-  });
+    const runtimeArgs = RuntimeArgs.fromMap(map);
 
-  const deploy = {
-    hash: generateRandomHex32(),
-    header: {
-      account: sender,
-      timestamp: Date.now(),
-      ttl: "30m",
-      gas_price: 1,
-      body_hash: generateRandomHex32(),
-      dependencies: [],
-      chain_name: "casper-testnet"
-    },
-    payment: {
-      ModuleBytes: {
-        module_bytes: "",
-        args: [
-          ["amount", { cl_type: "U512", bytes: "0400e87a48", parsed: "150000000" }]
-        ]
-      }
-    },
-    session: {
-      StoredContractByHash: {
-        hash: contractHash,
-        entry_point: entrypoint,
-        args: processedArgs
-      }
-    },
-    approvals: []
-  };
+    // 3. Build session code (StoredContractByHash)
+    const session = DeployUtil.ExecutableDeployItem.newStoredContractByHash(
+      Uint8Array.from(Buffer.from(contractHash, 'hex')),
+      entrypoint,
+      runtimeArgs
+    );
 
-  res.json({ deploy });
+    // 4. Build deploy params
+    const deployParams = new DeployUtil.DeployParams(
+      CLPublicKey.fromHex(sender),
+      chainName,
+      1, // gas price
+      30 * 60 * 1000 // TTL in ms (30m)
+    );
+
+    // 5. Make Deploy
+    const deploy = DeployUtil.makeDeploy(deployParams, session, payment);
+    
+    // 6. Serialize to JSON representation
+    const deployJson = DeployUtil.deployToJson(deploy);
+
+    res.json(deployJson);
+  } catch (err) {
+    console.error("Failed to build deploy using casper-js-sdk:", err);
+    res.status(500).json({ error: "Failed to construct valid deploy payload: " + err.message });
+  }
 });
 
 

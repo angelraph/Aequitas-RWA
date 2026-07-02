@@ -1086,7 +1086,7 @@ async function executeStakingTransaction() {
         entrypoint: currentAction === 'deposit' ? 'deposit' : 'withdraw',
         sender: casperWalletAddress,
         args: [
-          ["amount", { cl_type: "U512", parsed: (amount * 1000000000).toString() }] // CSPR has 9 decimals
+          ["amount", { cl_type: "U256", parsed: (amount * 1000000000).toString() }] // CSPR has 9 decimals, matches U256 ABI
         ]
       })
     });
@@ -1101,6 +1101,8 @@ async function executeStakingTransaction() {
     // Step 2: Prompt Wallet Signer Approval
     title.innerText = "Awaiting Wallet Signature";
     desc.innerText = "Please review and approve the transaction in your Casper wallet extension popup.";
+
+    console.log("Sign Deploy Request Payload (Staking):", JSON.stringify(deploy, null, 2));
 
     let signedDeploy;
     if (walletMode === 'casper') {
@@ -1241,7 +1243,13 @@ async function executeRecommendation() {
     title.innerText = "Structuring Rebalance Deploy";
     desc.innerText = "Requesting transaction payload structure for AequitasVault.reallocate_capital()...";
     
-    // Call the build deploy endpoint
+    // Extract the first RWA token in recommendations or use a mock token key if empty
+    const tokenAddresses = Object.keys(pendingRecommendation || {});
+    const rwaTokenHex = tokenAddresses[0] || '01a12e340c21342621743f5509ba09d01a5511b816ba7b778c1ef1d0d9cf1d4f2';
+    const rawVal = pendingRecommendation[rwaTokenHex] || 10000;
+    const amountValStr = (parseFloat(rawVal) * 1000000000).toString(); // CSPR has 9 decimals
+
+    // Call the build deploy endpoint with arguments matching the reallocate_capital ABI exactly
     const buildRes = await apiFetch('/api/casper/build-deploy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1249,7 +1257,9 @@ async function executeRecommendation() {
         entrypoint: 'reallocate_capital',
         sender: casperWalletAddress,
         args: [
-          ["allocations", { cl_type: "String", parsed: JSON.stringify(pendingRecommendation) }]
+          ["rwa_token", { cl_type: "Key", parsed: rwaTokenHex }],
+          ["amount", { cl_type: "U256", parsed: amountValStr }],
+          ["is_add", { cl_type: "Bool", parsed: true }]
         ]
       })
     });
@@ -1263,6 +1273,8 @@ async function executeRecommendation() {
 
     title.innerText = "Awaiting Wallet Signature";
     desc.innerText = "Please review and approve the rebalance transaction in your Casper wallet extension popup.";
+
+    console.log("Sign Deploy Request Payload (Rebalance):", JSON.stringify(deploy, null, 2));
 
     let signedDeploy;
     if (walletMode === 'casper') {
@@ -1848,6 +1860,8 @@ async function submitKYCForm(event) {
     // 3. Request Signature
     title.innerText = "Awaiting Signature";
     desc.innerText = "Please sign the compliance registration deploy in your Casper wallet extension.";
+
+    console.log("Sign Deploy Request Payload (KYC):", JSON.stringify(deploy, null, 2));
 
     let signedDeploy;
     if (walletMode === 'casper') {
