@@ -7,7 +7,8 @@ import { startTreasuryRouter } from './agents/treasury_router.js';
 import { calculateRiskMetrics } from './agents/risk_engine.js';
 import { runOrchestration } from './agents/multi_agent_system.js';
 import pkg from 'casper-js-sdk';
-const { DeployUtil, CLPublicKey, RuntimeArgs, CLValueBuilder, CLAccountHash } = pkg;
+const { Deploy, DeployHeader, ExecutableDeployItem, StoredContractByHash, Args, PublicKey, Duration, Key, CLValue, ContractHash } = pkg;
+
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1182,49 +1183,57 @@ app.post('/api/casper/build-deploy', (req, res) => {
     const chainName = net === 'mainnet' ? 'casper' : 'casper-testnet';
 
     // 1. Build standard payment
-    const payment = DeployUtil.standardPayment(paymentAmount);
+    const payment = ExecutableDeployItem.standardPayment(paymentAmount);
 
-    // 2. Reconstruct arguments map using CLValueBuilder
+    // 2. Reconstruct arguments map using CLValue builders
     const map = {};
     for (const arg of (args || [])) {
       const [name, valObj] = arg;
-      if (valObj.cl_type === 'U512' || valObj.cl_type === 'U256') {
-        map[name] = CLValueBuilder.u512(valObj.parsed.toString());
+      if (valObj.cl_type === 'U512') {
+        map[name] = CLValue.newCLUInt512(valObj.parsed.toString());
+      } else if (valObj.cl_type === 'U256') {
+        map[name] = CLValue.newCLUInt256(valObj.parsed.toString());
       } else if (valObj.cl_type === 'String') {
-        map[name] = CLValueBuilder.string(valObj.parsed);
+        map[name] = CLValue.newCLString(valObj.parsed);
+      } else if (valObj.cl_type === 'Bool') {
+        map[name] = CLValue.newCLValueBool(valObj.parsed === true || valObj.parsed === 'true');
       } else if (valObj.cl_type === 'Key') {
         let keyVal;
-        const cleanHex = valObj.parsed.startsWith('account-hash-') ? valObj.parsed.substring(13) : valObj.parsed;
-        if (valObj.parsed.startsWith('account-hash-') || cleanHex.length === 64) {
-          keyVal = new CLAccountHash(Uint8Array.from(Buffer.from(cleanHex, 'hex')));
+        if (valObj.parsed.startsWith('account-hash-') || valObj.parsed.startsWith('hash-')) {
+          keyVal = Key.newKey(valObj.parsed);
         } else {
-          keyVal = CLPublicKey.fromHex(valObj.parsed);
+          try {
+            const pubKey = PublicKey.newPublicKey(valObj.parsed);
+            keyVal = Key.newKey(`account-hash-${pubKey.accountHash().toHex()}`);
+          } catch (e) {
+            keyVal = Key.newKey(`account-hash-${valObj.parsed}`);
+          }
         }
-        map[name] = CLValueBuilder.key(keyVal);
+        map[name] = keyVal;
       }
     }
-    const runtimeArgs = RuntimeArgs.fromMap(map);
+    const runtimeArgs = Args.fromMap(map);
 
-    // 3. Build session code (StoredContractByHash)
-    const session = DeployUtil.ExecutableDeployItem.newStoredContractByHash(
-      Uint8Array.from(Buffer.from(contractHash, 'hex')),
+    // 3. Build session code (StoredContractByHash wrapped in ExecutableDeployItem)
+    const session = new ExecutableDeployItem();
+    session.storedContractByHash = new StoredContractByHash(
+      ContractHash.newContract('hash-' + contractHash),
       entrypoint,
       runtimeArgs
     );
 
-    // 4. Build deploy params
-    const deployParams = new DeployUtil.DeployParams(
-      CLPublicKey.fromHex(sender),
-      chainName,
-      1, // gas price
-      30 * 60 * 1000 // TTL in ms (30m)
-    );
+    // 4. Build deploy params / header
+    const header = DeployHeader.default();
+    header.account = PublicKey.newPublicKey(sender);
+    header.chainName = chainName;
+    header.ttl = new Duration(Duration.parseDurationString('30m'));
+    header.gasPrice = 1;
 
     // 5. Make Deploy
-    const deploy = DeployUtil.makeDeploy(deployParams, session, payment);
-    
-    // 6. Serialize to JSON representation
-    const deployJson = DeployUtil.deployToJson(deploy);
+    const deploy = Deploy.makeDeploy(header, payment, session);
+
+    // 6. Serialize to JSON representation (wrapped in { deploy: ... } envelope)
+    const deployJson = { deploy: Deploy.toJSON(deploy) };
 
     res.json(deployJson);
   } catch (err) {
