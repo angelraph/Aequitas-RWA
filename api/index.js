@@ -225,7 +225,8 @@ app.post('/api/agent-trigger', (req, res) => {
 app.post('/api/compliance/screen', (req, res) => {
   const { sender } = req.body;
   if (!LEDGER.accounts[sender]) {
-    return res.status(404).json({ error: "Account not found" });
+    // Auto-register new accounts in sandbox simulation with starting balance
+    LEDGER.accounts[sender] = { balance: '500000.00' };
   }
 
   const proofHash = "0x" + Math.random().toString(16).substring(2, 10).toUpperCase() + "789F";

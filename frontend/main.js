@@ -20,7 +20,7 @@ const routes = {
   '/dashboard': 'home',
   '/portfolio': 'home',
   '/invest': 'invest',
-  '/ai': 'invest',
+  '/ai': 'ai',
   '/assets': 'assets',
   '/compliance': 'compliance',
   '/activity': 'activity',
@@ -502,7 +502,11 @@ function updateUI(state) {
   // Update wallet connection pill
   const pill = document.getElementById('wallet-pill');
   if (pill) {
-    pill.innerText = `🔌 Connected: ${casperWalletAddress.substring(0, 12)}...`;
+    if (casperWalletAddress === 'user_wallet') {
+      pill.innerText = `🔌 Connect Wallet`;
+    } else {
+      pill.innerText = `🔌 Connected: ${casperWalletAddress.substring(0, 12)}...`;
+    }
   }
 
   // Render allocation progress bars (both home and portfolio panels)
@@ -658,23 +662,36 @@ function switchPane(paneId) {
 // Toggle deposit/withdraw interactive state
 function setStakingAction(action) {
   currentAction = action;
-  const stakeTab = document.getElementById('quick-stake-tab');
-  const unstakeTab = document.getElementById('quick-unstake-tab');
+  const stakeTab = document.getElementById('invest-stake-tab') || document.getElementById('quick-stake-tab');
+  const unstakeTab = document.getElementById('invest-unstake-tab') || document.getElementById('quick-unstake-tab');
+  const actionBtn = document.getElementById('invest-btn-submit-action') || document.getElementById('btn-submit-action');
   
   if (action === 'deposit') {
-    stakeTab.className = 'btn-action-primary';
-    unstakeTab.className = '';
-    unstakeTab.style.background = 'transparent';
-    unstakeTab.style.color = 'var(--text-secondary)';
-    document.getElementById('btn-submit-action').innerText = 'Stake CSPR';
+    if (stakeTab) {
+      stakeTab.className = 'btn-action-primary';
+      stakeTab.style.background = '';
+      stakeTab.style.color = '#fff';
+    }
+    if (unstakeTab) {
+      unstakeTab.className = '';
+      unstakeTab.style.background = 'transparent';
+      unstakeTab.style.color = 'var(--text-secondary)';
+    }
+    if (actionBtn) actionBtn.innerText = 'Stake CSPR';
   } else {
-    unstakeTab.className = 'btn-action-primary';
-    stakeTab.className = '';
-    stakeTab.style.background = 'transparent';
-    stakeTab.style.color = 'var(--text-secondary)';
+    if (unstakeTab) {
+      unstakeTab.className = 'btn-action-primary';
+      unstakeTab.style.background = '';
+      unstakeTab.style.color = '#fff';
+    }
+    if (stakeTab) {
+      stakeTab.className = '';
+      stakeTab.style.background = 'transparent';
+      stakeTab.style.color = 'var(--text-secondary)';
+    }
     
     const userVaultDeposit = networkState ? parseFloat(networkState.ledger.contracts.AequitasVault.balances[casperWalletAddress] || '0') : 0;
-    document.getElementById('btn-submit-action').innerText = `Unstake (Max: ${userVaultDeposit.toLocaleString()} CSPR)`;
+    if (actionBtn) actionBtn.innerText = `Unstake (Max: ${userVaultDeposit.toLocaleString()} CSPR)`;
   }
 }
 
@@ -759,6 +776,36 @@ function useDemoWalletMode() {
   nextOnboardingStep(5);
 }
 
+function disconnectWalletTrigger() {
+  if (casperWalletAddress === 'user_wallet') {
+    connectCasperWallet();
+  } else {
+    if (confirm("Are you sure you want to disconnect your Casper Wallet?")) {
+      walletMode = 'demo';
+      casperWalletAddress = 'user_wallet';
+      localStorage.setItem('aequitas_wallet_mode', 'demo');
+      localStorage.setItem('aequitas_wallet_address', 'user_wallet');
+
+      const providerSel = document.getElementById('setting-wallet-provider');
+      if (providerSel) {
+        providerSel.value = 'mock';
+        localStorage.setItem('aequitas_setting_wallet_provider', 'mock');
+      }
+
+      appendConsoleLog({
+        timestamp: new Date().toLocaleTimeString(),
+        agent: 'System',
+        message: 'Wallet disconnected. Reverted to Sandbox Demo Mode.'
+      });
+
+      fetch('/api/state')
+        .then(r => r.json())
+        .then(state => updateUI(state));
+    }
+  }
+}
+
+
 async function runOnboardKYC() {
   const provider = getCasperProvider();
   
@@ -767,8 +814,16 @@ async function runOnboardKYC() {
     return;
   }
 
-  document.getElementById('btn-onboard-kyc').style.display = 'none';
-  document.getElementById('compliance-loader-onboard').style.display = 'block';
+  const btnOnboard = document.getElementById('btn-onboard-kyc');
+  const loaderOnboard = document.getElementById('compliance-loader-onboard');
+  const btnKycVerify = document.getElementById('btn-kyc-verify');
+
+  if (btnOnboard) btnOnboard.style.display = 'none';
+  if (loaderOnboard) loaderOnboard.style.display = 'block';
+  if (btnKycVerify) {
+    btnKycVerify.disabled = true;
+    btnKycVerify.innerText = 'Verifying...';
+  }
 
   // Sign ZK compliance consent message
   const message = `Aequitas RWA KYC Verification: Consent to publish ZK compliance proof for wallet ${casperWalletAddress}`;
@@ -791,14 +846,40 @@ async function runOnboardKYC() {
       body: JSON.stringify({ sender: casperWalletAddress, signature, message })
     });
     
+    if (!res.ok) {
+      const errData = await res.json();
+      throw new Error(errData.error || "Compliance verification failed");
+    }
+    
     await res.json();
+    
+    // Trigger local state updates
+    fetch('/api/state')
+      .then(r => r.json())
+      .then(state => updateUI(state));
+
     setTimeout(() => {
-      nextOnboardingStep(6);
+      if (!onboardingCompleted) {
+        nextOnboardingStep(6);
+      } else {
+        alert("Compliance credentials successfully published to Casper!");
+      }
+      
+      if (btnOnboard) btnOnboard.style.display = 'block';
+      if (loaderOnboard) loaderOnboard.style.display = 'none';
+      if (btnKycVerify) {
+        btnKycVerify.disabled = false;
+        btnKycVerify.innerText = 'Run KYC Screen';
+      }
     }, 1200);
   } catch (err) {
-    alert("Signature verification failed: " + err.message);
-    document.getElementById('btn-onboard-kyc').style.display = 'block';
-    document.getElementById('compliance-loader-onboard').style.display = 'none';
+    alert("KYC screening failed: " + err.message);
+    if (btnOnboard) btnOnboard.style.display = 'block';
+    if (loaderOnboard) loaderOnboard.style.display = 'none';
+    if (btnKycVerify) {
+      btnKycVerify.disabled = false;
+      btnKycVerify.innerText = 'Run KYC Screen';
+    }
   }
 }
 
@@ -857,7 +938,7 @@ function closeTxModal() {
 }
 
 async function executeStakingTransaction() {
-  const amountInput = document.getElementById('amount-input');
+  const amountInput = document.getElementById('invest-amount-input') || document.getElementById('amount-input');
   const amount = parseFloat(amountInput.value);
   
   if (isNaN(amount) || amount <= 0) {
