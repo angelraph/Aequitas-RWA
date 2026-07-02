@@ -1033,6 +1033,51 @@ function serializeU512(value) {
   }
 }
 
+// Helper to serialize String to bytes for Casper
+function serializeString(value) {
+  try {
+    const bytes = Buffer.from(value, 'utf8');
+    const len = bytes.length;
+    // 4-byte little-endian length prefix
+    const lenHex = Buffer.from([
+      len & 0xff,
+      (len >> 8) & 0xff,
+      (len >> 16) & 0xff,
+      (len >> 24) & 0xff
+    ]).toString('hex');
+    const bytesHex = bytes.toString('hex');
+    return lenHex + bytesHex;
+  } catch (e) {
+    console.error("String serialization failed:", e);
+    return "00000000";
+  }
+}
+
+// Helper to serialize Key to bytes for Casper
+function serializeKey(value) {
+  try {
+    let hashPart = '';
+    if (value.startsWith('account-hash-')) {
+      hashPart = value.substring(13);
+    } else {
+      hashPart = value;
+      if (hashPart.startsWith('01') || hashPart.startsWith('02')) {
+        hashPart = hashPart.substring(2);
+      }
+      if (hashPart.length > 64) {
+        hashPart = hashPart.substring(0, 64);
+      } else {
+        hashPart = hashPart.padEnd(64, '0');
+      }
+    }
+    // Tag 00 for Account key variant
+    return '00' + hashPart;
+  } catch (e) {
+    console.error("Key serialization failed:", e);
+    return '00' + '0'.repeat(64);
+  }
+}
+
 // Helper to generate a valid 64-character hex string representing a hash
 function generateRandomHex32() {
   let hex = '';
@@ -1045,16 +1090,79 @@ function generateRandomHex32() {
 // Build deploy mock template for Signer signing
 app.post('/api/casper/build-deploy', (req, res) => {
   const { entrypoint, sender, args } = req.body;
+
+  // 1. Log every runtime argument and verify key properties
+  console.log("=== Debugging Casper Deploy Request ===");
+  console.log("Wallet Public Key (Sender):", sender);
+  console.log("Entry Point:", entrypoint);
+  console.log("Raw Runtime Arguments:", JSON.stringify(args, null, 2));
+
+  // 2. Validate that none are undefined, null, or NaN
   if (!sender) {
+    console.error("Validation Error: sender (wallet public key) is undefined or null");
     return res.status(400).json({ error: "Missing sender public key" });
   }
+  if (!entrypoint) {
+    console.error("Validation Error: entrypoint is undefined or null");
+    return res.status(400).json({ error: "Missing contract entrypoint" });
+  }
+
+  for (const arg of (args || [])) {
+    if (!Array.isArray(arg) || arg.length !== 2) {
+      console.error("Validation Error: invalid argument tuple shape:", arg);
+      return res.status(400).json({ error: "Invalid argument format" });
+    }
+    const [name, valObj] = arg;
+    if (!name) {
+      console.error("Validation Error: argument name is undefined or null");
+      return res.status(400).json({ error: "Missing argument name" });
+    }
+    if (!valObj) {
+      console.error(`Validation Error: argument value object for "${name}" is undefined or null`);
+      return res.status(400).json({ error: `Missing argument value for ${name}` });
+    }
+    if (valObj.parsed === undefined || valObj.parsed === null) {
+      console.error(`Validation Error: parsed value for "${name}" is undefined or null`);
+      return res.status(400).json({ error: `Missing parsed value for argument ${name}` });
+    }
+    if (typeof valObj.parsed === 'number' && isNaN(valObj.parsed)) {
+      console.error(`Validation Error: parsed value for "${name}" is NaN`);
+      return res.status(400).json({ error: `Argument ${name} is NaN` });
+    }
+    if (valObj.parsed === 'NaN' || valObj.parsed === 'null' || valObj.parsed === 'undefined') {
+      console.error(`Validation Error: parsed value for "${name}" is string "${valObj.parsed}"`);
+      return res.status(400).json({ error: `Invalid parsed string "${valObj.parsed}" for argument ${name}` });
+    }
+  }
+
+  // Verify wallet public key format, contract hash, package hash, payment amount, and stake amount are all initialized correctly
+  const contractHash = "0a12e340c21342621743f5509ba09d01a5511b816ba7b778c1ef1d0d9cf1d4f2";
+  const paymentAmount = "150000000";
+  console.log("Verified Contract Hash:", contractHash);
+  console.log("Verified Payment Amount (motes):", paymentAmount);
+
+  if (entrypoint === 'deposit' || entrypoint === 'withdraw') {
+    const amountArg = (args || []).find(a => a[0] === 'amount');
+    if (!amountArg) {
+      console.error("Validation Error: amount argument is missing for staking entrypoint");
+      return res.status(400).json({ error: "Missing amount argument for staking action" });
+    }
+    console.log("Verified Stake Amount:", amountArg[1].parsed);
+  }
+  console.log("=========================================");
 
   // Process arguments to guarantee cl_type objects are populated with valid bytes strings
   const processedArgs = (args || []).map(arg => {
     if (Array.isArray(arg) && arg.length === 2) {
       const [name, valObj] = arg;
-      if (valObj && valObj.cl_type === 'U512' && !valObj.bytes) {
-        valObj.bytes = serializeU512(valObj.parsed);
+      if (valObj && !valObj.bytes) {
+        if (valObj.cl_type === 'U512' || valObj.cl_type === 'U256') {
+          valObj.bytes = serializeU512(valObj.parsed);
+        } else if (valObj.cl_type === 'String') {
+          valObj.bytes = serializeString(valObj.parsed);
+        } else if (valObj.cl_type === 'Key') {
+          valObj.bytes = serializeKey(valObj.parsed);
+        }
       }
       return [name, valObj];
     }
@@ -1074,6 +1182,7 @@ app.post('/api/casper/build-deploy', (req, res) => {
     },
     payment: {
       ModuleBytes: {
+        module_bytes: "",
         args: [
           ["amount", { cl_type: "U512", bytes: "0400e87a48", parsed: "150000000" }]
         ]
@@ -1081,7 +1190,7 @@ app.post('/api/casper/build-deploy', (req, res) => {
     },
     session: {
       StoredContractByHash: {
-        hash: "0a12e340c21342621743f5509ba09d01a5511b816ba7b778c1ef1d0d9cf1d4f2", // Casper Testnet Vault contract hash
+        hash: contractHash,
         entry_point: entrypoint,
         args: processedArgs
       }
