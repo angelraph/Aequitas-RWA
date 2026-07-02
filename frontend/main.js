@@ -1096,31 +1096,31 @@ async function executeStakingTransaction() {
       throw new Error(err.error || "Failed to structure transaction payload");
     }
 
-    const { deploy } = await buildRes.json();
+    const deployPayload = await buildRes.json();
 
     // Step 2: Prompt Wallet Signer Approval
     title.innerText = "Awaiting Wallet Signature";
     desc.innerText = "Please review and approve the transaction in your Casper wallet extension popup.";
 
-    console.log("Sign Deploy Request Payload (Staking):", JSON.stringify(deploy, null, 2));
+    console.log("Sign Deploy Request Payload (Staking):", JSON.stringify(deployPayload, null, 2));
 
     let signedDeploy;
     if (walletMode === 'casper') {
       if (typeof window.CasperWalletProvider !== 'undefined') {
         const walletProvider = window.CasperWalletProvider();
-        const signed = await walletProvider.sign(JSON.stringify(deploy), casperWalletAddress);
+        const signed = await walletProvider.sign(JSON.stringify(deployPayload), casperWalletAddress);
         if (signed.cancelled) {
           throw new Error("Transaction signature cancelled by user.");
         }
         signedDeploy = JSON.parse(signed.deploy);
       } else {
-        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deploy), casperWalletAddress);
+        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deployPayload), casperWalletAddress);
         signedDeploy = JSON.parse(signedJson);
       }
     } else {
       // Sandbox Demo simulation: simulated sign
       await new Promise(r => setTimeout(r, 1200));
-      signedDeploy = deploy;
+      signedDeploy = deployPayload;
     }
 
     // Step 3: Broadcast to Testnet Node
@@ -1269,29 +1269,29 @@ async function executeRecommendation() {
       throw new Error(err.error || "Failed to structure rebalance payload");
     }
 
-    const { deploy } = await buildRes.json();
+    const deployPayload = await buildRes.json();
 
     title.innerText = "Awaiting Wallet Signature";
     desc.innerText = "Please review and approve the rebalance transaction in your Casper wallet extension popup.";
 
-    console.log("Sign Deploy Request Payload (Rebalance):", JSON.stringify(deploy, null, 2));
+    console.log("Sign Deploy Request Payload (Rebalance):", JSON.stringify(deployPayload, null, 2));
 
     let signedDeploy;
     if (walletMode === 'casper') {
       if (typeof window.CasperWalletProvider !== 'undefined') {
         const walletProvider = window.CasperWalletProvider();
-        const signed = await walletProvider.sign(JSON.stringify(deploy), casperWalletAddress);
+        const signed = await walletProvider.sign(JSON.stringify(deployPayload), casperWalletAddress);
         if (signed.cancelled) {
           throw new Error("Transaction signature cancelled by user.");
         }
         signedDeploy = JSON.parse(signed.deploy);
       } else {
-        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deploy), casperWalletAddress);
+        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deployPayload), casperWalletAddress);
         signedDeploy = JSON.parse(signedJson);
       }
     } else {
       await new Promise(r => setTimeout(r, 1200));
-      signedDeploy = deploy;
+      signedDeploy = deployPayload;
     }
 
     title.innerText = "Broadcasting Rebalance";
@@ -1855,30 +1855,30 @@ async function submitKYCForm(event) {
       throw new Error(err.error || "Failed to build compliance proof deploy");
     }
 
-    const { deploy } = await buildRes.json();
+    const deployPayload = await buildRes.json();
 
     // 3. Request Signature
     title.innerText = "Awaiting Signature";
     desc.innerText = "Please sign the compliance registration deploy in your Casper wallet extension.";
 
-    console.log("Sign Deploy Request Payload (KYC):", JSON.stringify(deploy, null, 2));
+    console.log("Sign Deploy Request Payload (KYC):", JSON.stringify(deployPayload, null, 2));
 
     let signedDeploy;
     if (walletMode === 'casper') {
       if (typeof window.CasperWalletProvider !== 'undefined') {
         const walletProvider = window.CasperWalletProvider();
-        const signed = await walletProvider.sign(JSON.stringify(deploy), casperWalletAddress);
+        const signed = await walletProvider.sign(JSON.stringify(deployPayload), casperWalletAddress);
         if (signed.cancelled) {
           throw new Error("Transaction signature cancelled by user.");
         }
         signedDeploy = JSON.parse(signed.deploy);
       } else {
-        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deploy), casperWalletAddress);
+        const signedJson = await window.casperlabsHelper.sign(JSON.stringify(deployPayload), casperWalletAddress);
         signedDeploy = JSON.parse(signedJson);
       }
     } else {
       await new Promise(r => setTimeout(r, 1200));
-      signedDeploy = deploy;
+      signedDeploy = deployPayload;
     }
 
     // 4. Broadcast
