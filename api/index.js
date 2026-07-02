@@ -864,7 +864,7 @@ app.get('/api/casper/deploy-status', async (req, res) => {
     const success = confirmed && !executionResults[0].result.Failure;
 
     // Process Ledger update on confirmation
-    if (confirmed && success && !PROCESSED_DEPLOYS.has(hash)) {
+    if (confirmed && !PROCESSED_DEPLOYS.has(hash)) {
       PROCESSED_DEPLOYS.add(hash);
       
       const deployObj = rpcData.result.deploy;
@@ -969,6 +969,10 @@ app.get('/api/casper/deploy-status', async (req, res) => {
         });
       } else if (entrypoint === 'reallocate_capital') {
         const allocStr = argsObj['allocations'];
+        const rwaToken = argsObj['rwa_token'];
+        const parsedMotes = argsObj['amount'];
+        const isAdd = argsObj['is_add'];
+
         if (allocStr) {
           try {
             const allocations = JSON.parse(allocStr);
@@ -989,16 +993,36 @@ app.get('/api/casper/deploy-status', async (req, res) => {
               description: `Rebalance portfolios using Odra reallocate_capital()`
             });
             addLog('Treasury Router', `On-Chain Portfolio Rebalanced. Changes: ${changes.join(', ')}`, 'success');
-            
-            wss.clients.forEach(client => {
-              if (client.readyState === 1) {
-                client.send(JSON.stringify({ type: 'INIT_STATE', data: { ...LEDGER, logs: [] } }));
-              }
-            });
           } catch (e) {
             console.error("Failed to parse allocation string:", e);
           }
+        } else if (rwaToken && parsedMotes) {
+          const amountCspr = parseFloat(parsedMotes) / 1000000000;
+          const oldAlloc = parseFloat(LEDGER.contracts.AequitasVault.allocations[rwaToken] || '0');
+          let newAlloc = oldAlloc;
+          if (isAdd === true || isAdd === 'true' || isAdd === 1 || isAdd === '1') {
+            newAlloc += amountCspr;
+          } else {
+            newAlloc -= amountCspr;
+          }
+          LEDGER.contracts.AequitasVault.allocations[rwaToken] = newAlloc.toFixed(2);
+
+          LEDGER.transactions.push({
+            id: hash,
+            type: "REALLOCATION",
+            sender: sender,
+            time: time,
+            description: `Reallocate Capital: update ${rwaToken} by ${amountCspr.toLocaleString()} CSPR (add: ${isAdd})`
+          });
+          addLog('Treasury Router', `On-Chain Portfolio Reallocated: ${rwaToken} adjusted by ${amountCspr.toLocaleString()} CSPR`, 'success');
         }
+
+        // Notify client updates
+        wss.clients.forEach(client => {
+          if (client.readyState === 1) {
+            client.send(JSON.stringify({ type: 'INIT_STATE', data: { ...LEDGER, logs: [] } }));
+          }
+        });
       }
     }
 
